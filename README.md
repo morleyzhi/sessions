@@ -4,25 +4,19 @@ A local desktop app that lists, searches, and displays your Claude Code, Codex C
 
 Everything runs on your machine. The app makes no network requests, has no auto-updater, and has one dependency: Electron.
 
-## Run it
+## Install it
 
 ```bash
-git clone https://github.com/morleyzhi/sessions.git
-cd sessions
-npm install
-npm start
+git clone https://github.com/morleyzhi/sessions.git && cd sessions && npm install && npm run install-app
 ```
 
-`npm start` keeps a terminal tied up. To get a normal Mac app you can launch from
-Spotlight or the Dock:
+That builds `Sessions.app`, puts it in `/Applications`, and strips the quarantine
+attribute — the app is unsigned, so Gatekeeper blocks it without that last step. Open it
+from Spotlight or the Dock. Requires Node 20 or newer and an Apple Silicon Mac; on an
+Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script first.
 
-```bash
-npm run install-app
-```
-
-That builds `Sessions.app`, replaces any copy in `/Applications`, and strips the
-quarantine attribute — the app is unsigned, so Gatekeeper blocks it without that last
-step. On an Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script.
+To run from source without installing, use `npm start` instead. That keeps a terminal
+open for as long as the app runs.
 
 The first launch indexes every session it finds and caches the result in
 `~/Library/Application Support/sessions/index.json`. Later launches read the cache and
