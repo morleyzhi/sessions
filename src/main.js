@@ -94,9 +94,9 @@ ipcMain.on('sessions:contextMenu', (event, summary) => {
     click: () => clipboard.writeText(String(value)),
   });
   const menu = Menu.buildFromTemplate([
-    copyItem('Copy Resume Command', summary.resumeCommand),
-    copyItem('Copy Title', summary.title),
+    copyItem('Copy Command', summary.resumeCommand),
     { type: 'separator' },
+    copyItem('Copy Title', summary.title),
     copyItem('Copy Session ID', summary.id),
     copyItem('Copy Working Directory', summary.cwd),
     copyItem('Copy Transcript Path', summary.filePath),
