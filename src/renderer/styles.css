@@ -78,7 +78,7 @@ main { flex: 1; display: flex; min-height: 0; }
   justify-content: center;
   gap: 5px;
   padding: 5px 0;
-  border-radius: 6px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: transparent;
   color: var(--muted);
@@ -115,6 +115,20 @@ main { flex: 1; display: flex; min-height: 0; }
 .filter:not(.active) .dot { opacity: 0.55; }
 
 .row.dragging { opacity: 0.5; }
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 1px 8px 1px 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 17px;
+  white-space: nowrap;
+}
 
 .live-tag {
   flex: none;
@@ -174,7 +188,7 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .detail-header h1 { font-size: 17px; margin: 0 0 6px; }
 
-.detail-sub { color: var(--muted); font-size: 12px; display: flex; gap: 10px; flex-wrap: wrap; }
+.detail-sub { color: var(--muted); font-size: 12px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 
 .resume { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
 

@@ -36,6 +36,11 @@ const relativeTime = (timestamp) => {
   return new Date(timestamp).toLocaleDateString();
 };
 
+const TOOL_NAMES = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor' };
+
+const toolPill = (tool) =>
+  `<span class="pill"><span class="dot ${escapeHtml(tool)}"></span>${escapeHtml(TOOL_NAMES[tool] || tool)}</span>`;
+
 const keyOf = (session) => `${session.tool}:${session.id}`;
 
 const render = () => {
@@ -79,12 +84,12 @@ const renderDetail = (session, summary) => {
     <div class="detail-header">
       <h1>${escapeHtml(session.title)}</h1>
       <div class="detail-sub">
-        <span>${escapeHtml(session.tool)}</span>
+        ${toolPill(session.tool)}
         <span>${escapeHtml(session.cwd || 'no working directory')}</span>
         <span>${new Date(session.updatedAt).toLocaleString()}</span>
         <span>${session.messageCount} messages</span>
       </div>
-      ${live ? '<div class="notice">This session is open in a running ' + escapeHtml(session.tool) + '. Resuming it will fail until you quit that process.</div>' : ''}
+      ${live ? `<div class="notice">This session is open in a running ${toolPill(session.tool)}. Resuming it will fail until you quit that process.</div>` : ''}
       <div class="resume">
         <code id="resume-command">${escapeHtml(session.resumeCommand)}</code>
         <button class="copy" id="copy">Copy resume command</button>
