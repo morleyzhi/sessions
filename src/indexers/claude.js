@@ -29,6 +29,7 @@ const parseFile = async (filePath) => {
   const stream = readline.createInterface({ input: fs.createReadStream(filePath), crlfDelay: Infinity });
   const messages = [];
   let aiTitle = '';
+  let customTitle = '';
   let cwd = '';
   let startedAt = null;
   let updatedAt = null;
@@ -43,6 +44,8 @@ const parseFile = async (filePath) => {
     }
     if (event.cwd && !cwd) cwd = event.cwd;
     if (event.type === 'ai-title' && event.aiTitle) aiTitle = event.aiTitle;
+    // A name you typed with /rename outranks the one Claude wrote for you.
+    if (event.type === 'custom-title' && event.customTitle) customTitle = event.customTitle;
     if (event.timestamp) {
       const time = Date.parse(event.timestamp);
       if (!Number.isNaN(time)) {
@@ -67,7 +70,7 @@ const parseFile = async (filePath) => {
   return {
     id: path.basename(filePath, '.jsonl'),
     tool: 'claude',
-    title: aiTitle || firstPrompt(main) || 'Untitled session',
+    title: customTitle || aiTitle || firstPrompt(main) || 'Untitled session',
     cwd: cwd || '',
     filePath,
     startedAt: startedAt ?? stats.birthtimeMs,
