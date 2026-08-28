@@ -30,12 +30,41 @@ const summarize = (session) => {
   return summary;
 };
 
-const refresh = async () => {
+const refresh = async ({ quiet = false } = {}) => {
   sessions = await buildIndex({
     cachePath: cachePath(),
-    onProgress: (progress) => mainWindow?.webContents.send('index-progress', progress),
+    onProgress: (progress) => {
+      if (!quiet) mainWindow?.webContents.send('index-progress', progress);
+    },
   });
   return sessions.map(summarize);
+};
+
+// What the window is currently showing, so a poll that changed nothing is silent.
+const signatureOf = (summaries) =>
+  summaries.map((summary) => `${summary.tool}:${summary.id}:${summary.updatedAt}`).join(',');
+
+let signature = '';
+let polling = false;
+
+/**
+ * Re-read the transcripts so a session started after launch shows up, then mark
+ * the running ones. Without the re-read a new session is missing from the index
+ * and can never be marked live.
+ */
+const poll = async () => {
+  if (polling || !mainWindow || mainWindow.isDestroyed()) return;
+  polling = true;
+  try {
+    const summaries = await refresh({ quiet: true });
+    if (signatureOf(summaries) !== signature) {
+      signature = signatureOf(summaries);
+      mainWindow.webContents.send('sessions-updated', summaries);
+    }
+    sendLiveKeys();
+  } finally {
+    polling = false;
+  }
 };
 
 // Push the set of running sessions to the window so rows can mark themselves.
@@ -59,7 +88,7 @@ const snippetFor = (session, terms) => {
 
 app.whenReady().then(() => {
   createWindow();
-  setInterval(sendLiveKeys, 5000);
+  setInterval(poll, 3000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -71,6 +100,7 @@ app.on('window-all-closed', () => {
 
 ipcMain.handle('sessions:list', async () => {
   const summaries = await refresh();
+  signature = signatureOf(summaries);
   sendLiveKeys();
   return summaries;
 });

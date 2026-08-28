@@ -45,6 +45,7 @@ const toolPill = (tool) =>
 const keyOf = (session) => `${session.tool}:${session.id}`;
 
 const render = () => {
+  const scrollTop = listElement.scrollTop;
   const terms = queryElement.value.toLowerCase().split(/\s+/).filter(Boolean);
   visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
   countElement.textContent = `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'}`;
@@ -68,6 +69,7 @@ const render = () => {
       </li>`;
     })
     .join('');
+  listElement.scrollTop = scrollTop;
 };
 
 const renderDetail = (session, summary) => {
@@ -169,6 +171,12 @@ queryElement.addEventListener('input', () => {
     allSessions = await window.sessions.search(queryElement.value);
     render();
   }, 120);
+});
+
+// A session started after launch arrives here, so it can be listed and marked live.
+window.sessions.onSessions(async (sessions) => {
+  allSessions = queryElement.value.trim() ? await window.sessions.search(queryElement.value) : sessions;
+  render();
 });
 
 window.sessions.onLive((keys) => {

@@ -9,6 +9,9 @@ const HELPER_ARGS = /--type=|app-server|code-mode-host|\bsandbox\b|\bmcp\b|Frame
 
 const PS_LINE = /^\s*(\d+)\s+(\w{3} \w{3}\s+\d+ \d+:\d+:\d+ \d{4})\s+(.*)$/;
 
+// A resumed session names its id on the command line.
+const SESSION_ID = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/i;
+
 const run = (command, args) => {
   try {
     return execFileSync(command, args, { encoding: 'utf8', timeout: 4000 });
@@ -26,7 +29,12 @@ const cliProcesses = () => {
     const [, pid, started, args] = match;
     const tool = CLI_NAMES[path.basename(args.split(' ')[0])];
     if (!tool || HELPER_ARGS.test(args)) continue;
-    processes.push({ pid, tool, startedAt: new Date(started).getTime() });
+    processes.push({
+      pid,
+      tool,
+      startedAt: new Date(started).getTime(),
+      sessionId: (SESSION_ID.exec(args) || [''])[0].toLowerCase(),
+    });
   }
   return processes;
 };
@@ -45,16 +53,20 @@ const workingDirectories = (pids) => {
 
 /**
  * Keys of the sessions a running CLI currently owns. A session counts as live
- * when a CLI for its tool is running in its working directory and the session
- * was written to after that process started — so the newest session in a
- * directory is marked, not every past session there.
+ * when a CLI resumed it by id, or when a CLI for its tool is running in its
+ * working directory and the session was written to after that process started —
+ * so the newest session in a directory is marked, not every past session there.
  */
 const liveSessionKeys = (summaries) => {
   const processes = cliProcesses();
   const directories = workingDirectories(processes.map((process) => process.pid));
   const live = new Set();
 
-  for (const { pid, tool, startedAt } of processes) {
+  for (const { pid, tool, startedAt, sessionId } of processes) {
+    if (sessionId) {
+      live.add(`${tool}:${sessionId}`);
+      continue;
+    }
     const cwd = directories.get(pid);
     if (!cwd) continue;
     const owned = summaries
