@@ -9,6 +9,7 @@ let visibleSessions = [];
 let activeTool = 'all';
 let selectedKey = '';
 let liveKeys = new Set();
+let detailKey = '';
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (character) => ({
@@ -109,6 +110,8 @@ const renderDetail = (session, summary) => {
 };
 
 const select = async (key) => {
+  // Clicking the row already shown in the detail pane does nothing.
+  if (key === detailKey) return;
   const summary = visibleSessions.find((session) => keyOf(session) === key);
   if (!summary) return;
   selectedKey = key;
@@ -120,6 +123,7 @@ const select = async (key) => {
     detailElement.innerHTML = '<div class="empty">Could not read this session</div>';
     return;
   }
+  detailKey = key;
   renderDetail(session, summary);
 };
 
