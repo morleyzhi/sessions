@@ -1,0 +1,13 @@
+{
+  "name": "sessions",
+  "version": "1.0.0",
+  "description": "Local browser for Claude Code, Codex, and Cursor session history",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron ."
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^44.0.0"
+  }
+}
