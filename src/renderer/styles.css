@@ -116,8 +116,6 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .row.dragging { opacity: 0.5; }
 
-.row.live .dot { box-shadow: 0 0 0 3px rgba(122, 162, 247, 0.18); }
-
 .live-tag {
   flex: none;
   font-size: 9.5px;

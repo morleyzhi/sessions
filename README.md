@@ -47,7 +47,7 @@ every time. Reopen the app from Spotlight or the Dock.
 2. **Search** — substring match across titles, working directories, and message text. All terms must match. Results show a highlighted snippet.
 3. **View** — the full transcript, user and assistant turns, with Claude Code subagent messages dimmed.
 4. **Copy resume command** — puts the right command on your clipboard. Paste it into iTerm2 and press Enter.
-5. **Live sessions** — a row whose CLI is running right now gets a `live` tag and a ring around its dot, refreshed every five seconds. Claude Code, Codex, and Cursor all refuse to resume a session another process already has open, so the detail pane says so instead of handing you a command that fails.
+5. **Live sessions** — a row whose CLI is running right now gets a `live` tag, refreshed every five seconds. Claude Code, Codex, and Cursor all refuse to resume a session another process already has open, so the detail pane says so instead of handing you a command that fails.
 6. **Drag a row into iTerm2** — drops the resume command at the prompt with a trailing newline, so the session starts on drop. Works with any terminal that accepts dropped text; iTerm2 may ask to confirm a multi-line paste the first time.
 
 The resume commands are:

@@ -47,7 +47,7 @@ const render = () => {
     .map((session) => {
       const snippet = session.snippet || session.preview;
       const live = liveKeys.has(keyOf(session));
-      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''} ${live ? 'live' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
+      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
         <div class="row-top">
           <span class="dot ${session.tool}"></span>
           <span class="row-title">${highlight(session.title, terms)}</span>
