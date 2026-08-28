@@ -63,7 +63,10 @@ ipcMain.handle('sessions:search', (event, query) => {
   if (!terms.length) return sessions.map(({ searchText, ...summary }) => summary);
   return sessions
     .filter((session) => matches(session, terms))
-    .map(({ searchText, ...summary }) => ({ ...summary, snippet: snippetFor(session, terms) }));
+    .map((session) => {
+      const { searchText, ...summary } = session;
+      return { ...summary, snippet: snippetFor(session, terms) };
+    });
 });
 
 ipcMain.handle('sessions:open', (event, { tool, filePath }) => loadSession({ tool, filePath }));
