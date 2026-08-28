@@ -1,6 +1,5 @@
 const listElement = document.getElementById('list');
 const detailElement = document.getElementById('detail');
-const countElement = document.getElementById('count');
 const queryElement = document.getElementById('query');
 const filtersElement = document.getElementById('filters');
 
@@ -54,7 +53,6 @@ const rowContent = (session, terms) => {
     </div>
     <div class="row-meta">
       <span>${escapeHtml(session.project || '—')}</span>
-      <span>${session.messageCount} msgs</span>
       <span>${relativeTime(session.updatedAt)}</span>
     </div>
     ${snippet ? `<div class="row-snippet">${highlight(snippet, terms)}</div>` : ''}`;
@@ -68,7 +66,6 @@ const rowContent = (session, terms) => {
 const render = () => {
   const terms = queryElement.value.toLowerCase().split(/\s+/).filter(Boolean);
   visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
-  countElement.textContent = `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'}`;
 
   const existing = new Map();
   for (const row of listElement.children) existing.set(row.dataset.key, row);
@@ -119,7 +116,6 @@ const renderDetail = (session, summary) => {
         ${toolPill(session.tool)}
         <span>${escapeHtml(session.cwd || 'no working directory')}</span>
         <span>${new Date(session.updatedAt).toLocaleString()}</span>
-        <span>${session.messageCount} messages</span>
       </div>
       ${live ? `<div class="notice">This session is open in a running ${toolPill(session.tool)}. Resuming it will fail until you quit that process.</div>` : ''}
       <div class="resume">
@@ -216,7 +212,7 @@ window.sessions.onLive((keys) => {
 });
 
 window.sessions.onProgress(({ done, total }) => {
-  countElement.textContent = `Indexing ${done} / ${total}…`;
+  queryElement.placeholder = done < total ? `Indexing ${done} / ${total}…` : 'Search sessions';
 });
 
 window.sessions.list().then((sessions) => {
