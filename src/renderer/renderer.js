@@ -44,32 +44,61 @@ const toolPill = (tool) =>
 
 const keyOf = (session) => `${session.tool}:${session.id}`;
 
+const rowContent = (session, terms) => {
+  const snippet = session.snippet || session.preview;
+  const live = liveKeys.has(keyOf(session));
+  return `<div class="row-top">
+      <span class="dot ${session.tool}"></span>
+      <span class="row-title">${highlight(session.title, terms)}</span>
+      ${live ? '<span class="live-tag" title="A running CLI owns this session, so it cannot be resumed until you quit it">live</span>' : ''}
+    </div>
+    <div class="row-meta">
+      <span>${escapeHtml(session.project || '—')}</span>
+      <span>${session.messageCount} msgs</span>
+      <span>${relativeTime(session.updatedAt)}</span>
+    </div>
+    ${snippet ? `<div class="row-snippet">${highlight(snippet, terms)}</div>` : ''}`;
+};
+
+/**
+ * Update the list in place, matching rows by key. Rewriting the whole list on
+ * every poll made rows flicker as a live session re-sorted to the top; here an
+ * unchanged row is only moved, and a moved row is not repainted.
+ */
 const render = () => {
-  const scrollTop = listElement.scrollTop;
   const terms = queryElement.value.toLowerCase().split(/\s+/).filter(Boolean);
   visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
   countElement.textContent = `${visibleSessions.length} session${visibleSessions.length === 1 ? '' : 's'}`;
 
-  listElement.innerHTML = visibleSessions
-    .map((session) => {
-      const snippet = session.snippet || session.preview;
-      const live = liveKeys.has(keyOf(session));
-      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
-        <div class="row-top">
-          <span class="dot ${session.tool}"></span>
-          <span class="row-title">${highlight(session.title, terms)}</span>
-          ${live ? '<span class="live-tag" title="A running CLI owns this session, so it cannot be resumed until you quit it">live</span>' : ''}
-        </div>
-        <div class="row-meta">
-          <span>${escapeHtml(session.project || '—')}</span>
-          <span>${session.messageCount} msgs</span>
-          <span>${relativeTime(session.updatedAt)}</span>
-        </div>
-        ${snippet ? `<div class="row-snippet">${highlight(snippet, terms)}</div>` : ''}
-      </li>`;
-    })
-    .join('');
-  listElement.scrollTop = scrollTop;
+  const existing = new Map();
+  for (const row of listElement.children) existing.set(row.dataset.key, row);
+
+  let cursor = listElement.firstElementChild;
+  for (const session of visibleSessions) {
+    const key = keyOf(session);
+    let row = existing.get(key);
+    if (!row) {
+      row = document.createElement('li');
+      row.className = 'row';
+      row.draggable = true;
+      row.dataset.key = key;
+    }
+    if (row === cursor) cursor = cursor.nextElementSibling;
+    else listElement.insertBefore(row, cursor);
+
+    const content = rowContent(session, terms);
+    if (row.renderedContent !== content) {
+      row.innerHTML = content;
+      row.renderedContent = content;
+    }
+    row.classList.toggle('selected', key === selectedKey);
+  }
+
+  while (cursor) {
+    const next = cursor.nextElementSibling;
+    cursor.remove();
+    cursor = next;
+  }
 };
 
 const renderDetail = (session, summary) => {
