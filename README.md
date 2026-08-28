@@ -10,9 +10,8 @@ Everything runs on your machine. The app makes no network requests, has no auto-
 git clone https://github.com/morleyzhi/sessions.git && cd sessions && npm install && npm run install-app
 ```
 
-That builds `Sessions.app`, puts it in `/Applications`, and strips the quarantine
-attribute — the app is unsigned, so Gatekeeper blocks it without that last step. Open it
-from Spotlight or the Dock. Requires Node 20 or newer and an Apple Silicon Mac; on an
+That builds `Sessions.app`, puts it in `/Applications`, strips the quarantine attribute —
+the app is unsigned, so Gatekeeper blocks it without that step — and opens it. Requires Node 20 or newer and an Apple Silicon Mac; on an
 Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script first.
 
 To run from source without installing, use `npm start` instead. That keeps a terminal
@@ -24,16 +23,15 @@ only re-parse files whose size or modification time changed.
 
 ## Updating
 
-There is no auto-updater. To pick up someone else's changes, quit the app, then:
+There is no auto-updater. To pick up someone else's changes:
 
 ```bash
-git pull
-npm install
-npm run install-app
+git pull && npm install && npm run install-app
 ```
 
-`npm install` matters only when dependencies changed, but it is cheap and safe to run
-every time. Reopen the app from Spotlight or the Dock.
+Same last step as installing. `install-app` quits a running copy of the app, replaces it,
+and reopens it, so it does not matter whether the app is open when you run it.
+`npm install` matters only when dependencies changed, but it is cheap to run every time.
 
 ## What it does
 
