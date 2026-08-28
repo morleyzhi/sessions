@@ -13,7 +13,7 @@ const createWindow = () => {
     height: 820,
     minWidth: 900,
     titleBarStyle: 'hiddenInset',
-    backgroundColor: '#16171b',
+    backgroundColor: '#0e0f12',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,

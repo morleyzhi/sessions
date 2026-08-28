@@ -27,6 +27,7 @@ const toSummary = (session, fingerprint) => ({
   messageCount: session.messageCount,
   preview: session.preview,
   searchText: session.searchText,
+  resumeCommand: INDEXERS[session.tool].resumeCommand(session),
   fingerprint,
 });
 
@@ -60,6 +61,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
 
     const cached = cache[target];
     if (cached && cached.fingerprint === fingerprint) {
+      if (!cached.resumeCommand) cached.resumeCommand = INDEXERS[tool].resumeCommand(cached);
       nextCache[target] = cached;
       summaries.push(cached);
       continue;

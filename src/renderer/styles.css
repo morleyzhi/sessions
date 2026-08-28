@@ -1,8 +1,8 @@
 :root {
-  --bg: #16171b;
-  --panel: #1c1e23;
-  --panel-hover: #24272e;
-  --border: #2b2e36;
+  --bg: #0e0f12;
+  --panel: #16181d;
+  --panel-hover: #1e2128;
+  --border: #262932;
   --text: #e6e8ec;
   --muted: #8d93a1;
   --accent: #7aa2f7;
@@ -12,6 +12,23 @@
 }
 
 * { box-sizing: border-box; }
+
+/* Thin overlay scrollbars in place of the native ones, visible only while
+   the pointer is over the area that scrolls. */
+::-webkit-scrollbar { width: 11px; height: 11px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-corner { background: transparent; }
+
+::-webkit-scrollbar-thumb {
+  background: transparent;
+  border: 3px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+}
+
+:hover::-webkit-scrollbar-thumb { background: #3a3f4b; background-clip: padding-box; }
+:hover::-webkit-scrollbar-thumb:hover { background: #4d5361; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:active { background: #5c6373; background-clip: padding-box; }
 
 body {
   margin: 0;
@@ -56,6 +73,10 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .filter {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
   padding: 5px 0;
   border-radius: 6px;
   border: 1px solid var(--border);
@@ -87,6 +108,13 @@ main { flex: 1; display: flex; min-height: 0; }
 .dot.claude { background: var(--claude); }
 .dot.codex { background: var(--codex); }
 .dot.cursor { background: var(--cursor); }
+.dot.all {
+  background: linear-gradient(135deg, var(--claude) 0%, var(--claude) 33%, var(--codex) 33%, var(--codex) 66%, var(--cursor) 66%);
+}
+
+.filter:not(.active) .dot { opacity: 0.55; }
+
+.row.dragging { opacity: 0.5; }
 
 .row-title {
   font-weight: 550;

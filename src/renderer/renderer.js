@@ -45,7 +45,7 @@ const render = () => {
   listElement.innerHTML = visibleSessions
     .map((session) => {
       const snippet = session.snippet || session.preview;
-      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''}" data-key="${escapeHtml(keyOf(session))}">
+      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
         <div class="row-top">
           <span class="dot ${session.tool}"></span>
           <span class="row-title">${highlight(session.title, terms)}</span>
@@ -116,6 +116,20 @@ const select = async (key) => {
 listElement.addEventListener('click', (event) => {
   const row = event.target.closest('.row');
   if (row) select(row.dataset.key);
+});
+
+// Dropping a row on iTerm2 pastes the resume command; the trailing newline runs it.
+listElement.addEventListener('dragstart', (event) => {
+  const row = event.target.closest('.row');
+  const session = row && visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
+  if (!session || !session.resumeCommand) return;
+  event.dataTransfer.setData('text/plain', `${session.resumeCommand}\n`);
+  event.dataTransfer.effectAllowed = 'copy';
+  row.classList.add('dragging');
+});
+
+listElement.addEventListener('dragend', (event) => {
+  event.target.closest('.row')?.classList.remove('dragging');
 });
 
 filtersElement.addEventListener('click', (event) => {

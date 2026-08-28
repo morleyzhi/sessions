@@ -4,10 +4,13 @@
   "description": "Local browser for Claude Code, Codex, and Cursor session history",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron ."
+    "start": "electron .",
+    "package": "electron-packager . Sessions --platform=darwin --arch=arm64 --out=dist --overwrite",
+    "install-app": "npm run package && rm -rf /Applications/Sessions.app && cp -R dist/Sessions-darwin-arm64/Sessions.app /Applications/ && xattr -dr com.apple.quarantine /Applications/Sessions.app"
   },
   "license": "MIT",
   "devDependencies": {
+    "@electron/packager": "^18.4.4",
     "electron": "^44.0.0"
   }
 }

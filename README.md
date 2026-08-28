@@ -1,6 +1,6 @@
 # Sessions
 
-A local desktop app that lists, searches, and displays your Claude Code, Codex CLI, and Cursor session history, and copies the command to resume any session in iTerm2.
+A local desktop app that lists, searches, and displays your Claude Code, Codex CLI, and Cursor session history, and starts any session in iTerm2 by drag or by clipboard.
 
 Everything runs on your machine. The app makes no network requests, has no auto-updater, and has one dependency: Electron.
 
@@ -13,16 +13,41 @@ npm install
 npm start
 ```
 
+`npm start` keeps a terminal tied up. To get a normal Mac app you can launch from
+Spotlight or the Dock:
+
+```bash
+npm run install-app
+```
+
+That builds `Sessions.app`, replaces any copy in `/Applications`, and strips the
+quarantine attribute — the app is unsigned, so Gatekeeper blocks it without that last
+step. On an Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script.
+
 The first launch indexes every session it finds and caches the result in
 `~/Library/Application Support/sessions/index.json`. Later launches read the cache and
 only re-parse files whose size or modification time changed.
 
+## Updating
+
+There is no auto-updater. To pick up someone else's changes, quit the app, then:
+
+```bash
+git pull
+npm install
+npm run install-app
+```
+
+`npm install` matters only when dependencies changed, but it is cheap and safe to run
+every time. Reopen the app from Spotlight or the Dock.
+
 ## What it does
 
-1. **List** — every session across the three tools, newest first, with the project name, message count, and relative time. Filter by tool with the buttons at the top of the sidebar.
+1. **List** — every session across the three tools, newest first, with the project name, message count, and relative time. A colored dot marks the tool — orange Claude Code, green Codex, purple Cursor — and the same dot appears on each filter button.
 2. **Search** — substring match across titles, working directories, and message text. All terms must match. Results show a highlighted snippet.
 3. **View** — the full transcript, user and assistant turns, with Claude Code subagent messages dimmed.
 4. **Copy resume command** — puts the right command on your clipboard. Paste it into iTerm2 and press Enter.
+5. **Drag a row into iTerm2** — drops the resume command at the prompt with a trailing newline, so the session starts on drop. Works with any terminal that accepts dropped text; iTerm2 may ask to confirm a multi-line paste the first time.
 
 The resume commands are:
 
