@@ -1,5 +1,5 @@
 const path = require('path');
-const { app, BrowserWindow, ipcMain, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, clipboard } = require('electron');
 const { buildIndex, loadSession, resumeCommandFor } = require('./indexers');
 const { liveSessionKeys } = require('./live');
 
@@ -86,6 +86,23 @@ ipcMain.handle('sessions:search', (event, query) => {
 });
 
 ipcMain.handle('sessions:open', (event, { tool, filePath }) => loadSession({ tool, filePath }));
+
+ipcMain.on('sessions:contextMenu', (event, summary) => {
+  const copyItem = (label, value) => ({
+    label,
+    enabled: Boolean(value),
+    click: () => clipboard.writeText(String(value)),
+  });
+  const menu = Menu.buildFromTemplate([
+    copyItem('Copy Resume Command', summary.resumeCommand),
+    copyItem('Copy Title', summary.title),
+    { type: 'separator' },
+    copyItem('Copy Session ID', summary.id),
+    copyItem('Copy Working Directory', summary.cwd),
+    copyItem('Copy Transcript Path', summary.filePath),
+  ]);
+  menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+});
 
 ipcMain.handle('sessions:copyResume', (event, summary) => {
   const command = resumeCommandFor(summary);

@@ -123,6 +123,14 @@ listElement.addEventListener('click', (event) => {
   if (row) select(row.dataset.key);
 });
 
+listElement.addEventListener('contextmenu', (event) => {
+  const row = event.target.closest('.row');
+  if (!row) return;
+  event.preventDefault();
+  const session = visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
+  if (session) window.sessions.contextMenu(session);
+});
+
 // Dropping a row on iTerm2 pastes the resume command; the trailing newline runs it.
 listElement.addEventListener('dragstart', (event) => {
   const row = event.target.closest('.row');
