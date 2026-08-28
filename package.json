@@ -5,8 +5,8 @@
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
-    "package": "electron-packager . Sessions --platform=darwin --arch=arm64 --out=dist --overwrite",
-    "install-app": "npm run package && (pkill -f '/Applications/Sessions[.]app' || true) && sleep 1 && rm -rf /Applications/Sessions.app && cp -R dist/Sessions-darwin-arm64/Sessions.app /Applications/ && xattr -dr com.apple.quarantine /Applications/Sessions.app && open -a /Applications/Sessions.app"
+    "package": "electron-packager . Sessions --platform=darwin --arch=arm64 --app-bundle-id=com.morleyzhi.sessions --out=dist --overwrite",
+    "install-app": "bash scripts/install-app.sh"
   },
   "license": "MIT",
   "devDependencies": {

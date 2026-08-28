@@ -14,6 +14,15 @@ That builds `Sessions.app`, puts it in `/Applications`, strips the quarantine at
 the app is unsigned, so Gatekeeper blocks it without that step — and opens it. Requires Node 20 or newer and an Apple Silicon Mac; on an
 Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script first.
 
+If the app opens to Electron's default welcome window rather than the session list, the
+bundle was built without the source. Check it with:
+
+```bash
+ls /Applications/Sessions.app/Contents/Resources/app/src/main.js
+```
+
+No such file means the build was bad: `rm -rf node_modules dist && npm install && npm run install-app`.
+
 To run from source without installing, use `npm start` instead. That keeps a terminal
 open for as long as the app runs.
 
