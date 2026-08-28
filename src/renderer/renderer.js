@@ -8,6 +8,7 @@ let allSessions = [];
 let visibleSessions = [];
 let activeTool = 'all';
 let selectedKey = '';
+let liveKeys = new Set();
 
 const escapeHtml = (value) =>
   String(value).replace(/[&<>"']/g, (character) => ({
@@ -45,10 +46,12 @@ const render = () => {
   listElement.innerHTML = visibleSessions
     .map((session) => {
       const snippet = session.snippet || session.preview;
-      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
+      const live = liveKeys.has(keyOf(session));
+      return `<li class="row ${keyOf(session) === selectedKey ? 'selected' : ''} ${live ? 'live' : ''}" draggable="true" data-key="${escapeHtml(keyOf(session))}">
         <div class="row-top">
           <span class="dot ${session.tool}"></span>
           <span class="row-title">${highlight(session.title, terms)}</span>
+          ${live ? '<span class="live-tag" title="A running CLI owns this session, so it cannot be resumed until you quit it">live</span>' : ''}
         </div>
         <div class="row-meta">
           <span>${escapeHtml(session.project || '—')}</span>
@@ -62,6 +65,7 @@ const render = () => {
 };
 
 const renderDetail = (session, summary) => {
+  const live = liveKeys.has(keyOf(summary));
   const messages = session.messages
     .map(
       (message) => `<div class="message ${message.role} ${message.isSidechain ? 'sidechain' : ''}">
@@ -80,6 +84,7 @@ const renderDetail = (session, summary) => {
         <span>${new Date(session.updatedAt).toLocaleString()}</span>
         <span>${session.messageCount} messages</span>
       </div>
+      ${live ? '<div class="notice">This session is open in a running ' + escapeHtml(session.tool) + '. Resuming it will fail until you quit that process.</div>' : ''}
       <div class="resume">
         <code id="resume-command">${escapeHtml(session.resumeCommand)}</code>
         <button class="copy" id="copy">Copy resume command</button>
@@ -147,6 +152,13 @@ queryElement.addEventListener('input', () => {
     allSessions = await window.sessions.search(queryElement.value);
     render();
   }, 120);
+});
+
+window.sessions.onLive((keys) => {
+  const next = new Set(keys);
+  if (next.size === liveKeys.size && [...next].every((key) => liveKeys.has(key))) return;
+  liveKeys = next;
+  render();
 });
 
 window.sessions.onProgress(({ done, total }) => {

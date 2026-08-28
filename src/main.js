@@ -1,6 +1,7 @@
 const path = require('path');
 const { app, BrowserWindow, ipcMain, clipboard } = require('electron');
 const { buildIndex, loadSession, resumeCommandFor } = require('./indexers');
+const { liveSessionKeys } = require('./live');
 
 let mainWindow = null;
 let sessions = [];
@@ -24,12 +25,23 @@ const createWindow = () => {
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 };
 
+const summarize = (session) => {
+  const { searchText, ...summary } = session;
+  return summary;
+};
+
 const refresh = async () => {
   sessions = await buildIndex({
     cachePath: cachePath(),
     onProgress: (progress) => mainWindow?.webContents.send('index-progress', progress),
   });
-  return sessions.map(({ searchText, ...summary }) => summary);
+  return sessions.map(summarize);
+};
+
+// Push the set of running sessions to the window so rows can mark themselves.
+const sendLiveKeys = () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('live-sessions', [...liveSessionKeys(sessions)]);
 };
 
 const matches = (session, terms) => {
@@ -47,6 +59,7 @@ const snippetFor = (session, terms) => {
 
 app.whenReady().then(() => {
   createWindow();
+  setInterval(sendLiveKeys, 5000);
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
@@ -56,16 +69,19 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
 });
 
-ipcMain.handle('sessions:list', () => refresh());
+ipcMain.handle('sessions:list', async () => {
+  const summaries = await refresh();
+  sendLiveKeys();
+  return summaries;
+});
 
 ipcMain.handle('sessions:search', (event, query) => {
   const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
-  if (!terms.length) return sessions.map(({ searchText, ...summary }) => summary);
+  if (!terms.length) return sessions.map(summarize);
   return sessions
     .filter((session) => matches(session, terms))
     .map((session) => {
-      const { searchText, ...summary } = session;
-      return { ...summary, snippet: snippetFor(session, terms) };
+      return { ...summarize(session), snippet: snippetFor(session, terms) };
     });
 });
 
