@@ -6,41 +6,17 @@ Everything runs on your machine. The app makes no network requests, has no auto-
 
 ## Install it
 
+First time:
+
 ```bash
 git clone https://github.com/morleyzhi/sessions.git && cd sessions && npm install && npm run install-app
 ```
 
-That builds `Sessions.app`, puts it in `/Applications`, strips the quarantine attribute —
-the app is unsigned, so Gatekeeper blocks it without that step — and opens it. Requires Node 20 or newer and an Apple Silicon Mac; on an
-Intel Mac, change `--arch=arm64` to `--arch=x64` in the `package` script first.
-
-If the app opens to Electron's default welcome window rather than the session list, the
-bundle was built without the source. Check it with:
-
-```bash
-ls /Applications/Sessions.app/Contents/Resources/app/src/main.js
-```
-
-No such file means the build was bad: `rm -rf node_modules dist && npm install && npm run install-app`.
-
-To run from source without installing, use `npm start` instead. That keeps a terminal
-open for as long as the app runs.
-
-The first launch indexes every session it finds and caches the result in
-`~/Library/Application Support/sessions/index.json`. Later launches read the cache and
-only re-parse files whose size or modification time changed.
-
-## Updating
-
-There is no auto-updater. To pick up someone else's changes:
+After pulling:
 
 ```bash
 git pull && npm install && npm run install-app
 ```
-
-Same last step as installing. `install-app` quits a running copy of the app, replaces it,
-and reopens it, so it does not matter whether the app is open when you run it.
-`npm install` matters only when dependencies changed, but it is cheap to run every time.
 
 ## What it does
 
