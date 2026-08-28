@@ -27,7 +27,10 @@ const cliProcesses = () => {
     const match = PS_LINE.exec(line);
     if (!match) continue;
     const [, pid, started, args] = match;
-    const tool = CLI_NAMES[path.basename(args.split(' ')[0])];
+    // A CLI run through an interpreter shows up as "node .../claude", so check
+    // the script path too, not just the command.
+    const tokens = args.split(' ').slice(0, 2);
+    const tool = tokens.map((token) => CLI_NAMES[path.basename(token)]).find(Boolean);
     if (!tool || HELPER_ARGS.test(args)) continue;
     processes.push({
       pid,
