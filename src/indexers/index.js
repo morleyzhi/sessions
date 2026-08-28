@@ -54,7 +54,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
     let fingerprint;
     try {
       const { mtimeMs, size } = statTarget(target);
-      fingerprint = `${mtimeMs}:${size}`;
+      fingerprint = `v2:${mtimeMs}:${size}`;
     } catch {
       continue;
     }

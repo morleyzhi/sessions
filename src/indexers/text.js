@@ -28,9 +28,27 @@ const buildSearchText = (messages) => {
   return text.slice(0, MAX_TEXT_PER_SESSION);
 };
 
+// A turn someone actually wrote, as opposed to a tool call or its result.
+const TOOL_MARKER = /^\[tool(?::[^\]]*)?\]$|^\[tool result\]$/;
+
+const isToolOnly = (text) => text.split('\n').every((line) => TOOL_MARKER.test(line.trim()));
+
+/**
+ * When the session last had something written to it: the moment the assistant
+ * finished its reply, or the moment you sent yours. Tool calls and their
+ * results keep streaming in long after either, so they do not count.
+ */
+const lastMessageTime = (messages) => {
+  for (let index = messages.length - 1; index >= 0; index--) {
+    const message = messages[index];
+    if (message.timestamp && !isToolOnly(message.text)) return message.timestamp;
+  }
+  return null;
+};
+
 const firstPrompt = (messages) => {
   const prompt = messages.find((message) => message.role === 'user' && message.text.length > 2);
   return prompt ? collapse(prompt.text).slice(0, 120) : '';
 };
 
-module.exports = { extractContent, buildSearchText, firstPrompt, collapse };
+module.exports = { extractContent, buildSearchText, firstPrompt, lastMessageTime, collapse };

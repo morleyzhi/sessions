@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { extractContent, buildSearchText, firstPrompt, collapse } = require('./text');
+const { extractContent, buildSearchText, firstPrompt, lastMessageTime, collapse } = require('./text');
 
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
 
@@ -71,7 +71,7 @@ const parseFile = async (filePath) => {
     cwd: cwd || '',
     filePath,
     startedAt: startedAt ?? stats.birthtimeMs,
-    updatedAt: updatedAt ?? stats.mtimeMs,
+    updatedAt: lastMessageTime(main) ?? updatedAt ?? stats.mtimeMs,
     messageCount: main.length,
     preview: collapse(firstPrompt(main)),
     searchText: buildSearchText(main),

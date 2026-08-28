@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { extractContent, buildSearchText, firstPrompt, collapse } = require('./text');
+const { extractContent, buildSearchText, firstPrompt, lastMessageTime, collapse } = require('./text');
 
 const ROOT = path.join(os.homedir(), '.codex', 'sessions');
 const INDEX_FILE = path.join(os.homedir(), '.codex', 'session_index.jsonl');
@@ -90,7 +90,7 @@ const parseFile = async (filePath, titles = new Map()) => {
     cwd,
     filePath,
     startedAt: startedAt ?? stats.birthtimeMs,
-    updatedAt: updatedAt ?? stats.mtimeMs,
+    updatedAt: lastMessageTime(messages) ?? updatedAt ?? stats.mtimeMs,
     messageCount: messages.length,
     preview: collapse(firstPrompt(messages)),
     searchText: buildSearchText(messages),
