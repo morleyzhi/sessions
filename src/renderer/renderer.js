@@ -36,6 +36,14 @@ const relativeTime = (timestamp) => {
   return new Date(timestamp).toLocaleDateString();
 };
 
+// When a turn was written. The date is dropped for a turn from today.
+const turnTime = (timestamp) => {
+  const date = new Date(timestamp);
+  const time = date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  if (date.toDateString() === new Date().toDateString()) return time;
+  return `${date.toLocaleDateString([], { month: 'short', day: 'numeric' })}, ${time}`;
+};
+
 const TOOL_NAMES = { claude: 'Claude', codex: 'Codex', cursor: 'Cursor' };
 
 const toolPill = (tool) =>
@@ -103,7 +111,10 @@ const renderDetail = (session, summary) => {
   const messages = session.messages
     .map(
       (message) => `<div class="message ${message.role} ${message.isSidechain ? 'sidechain' : ''}">
-        <div class="role">${message.role}${message.isSidechain ? ' · subagent' : ''}</div>
+        <div class="role">
+          <span>${message.role}${message.isSidechain ? ' · subagent' : ''}</span>
+          ${message.timestamp ? `<span class="turn-time">${turnTime(message.timestamp)}</span>` : ''}
+        </div>
         <div class="bubble">${escapeHtml(message.text)}</div>
       </div>`
     )

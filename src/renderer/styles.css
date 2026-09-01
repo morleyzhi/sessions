@@ -221,6 +221,10 @@ main { flex: 1; display: flex; min-height: 0; }
 .message { margin-bottom: 18px; }
 
 .role {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
   font-size: 10.5px;
   text-transform: uppercase;
   letter-spacing: 0.06em;
@@ -229,6 +233,8 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 .message.user .role { color: var(--accent); }
+
+.turn-time { color: var(--muted); text-transform: none; letter-spacing: 0; }
 
 .bubble {
   background: var(--panel);
