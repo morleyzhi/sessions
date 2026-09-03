@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawnSync } = require('child_process');
-const { extractContent, buildSearchText, firstPrompt, collapse } = require('./text');
+const { extractContent, buildSearchText, firstPrompt, collapse, isToolOnly, toolCalls } = require('./text');
 const { collectStrings } = require('./protobuf');
 
 const ROOT = path.join(os.homedir(), '.cursor', 'chats');
@@ -73,7 +73,7 @@ const readMessages = (dbPath) => {
       const key = blob.id || text.slice(0, 300);
       if (seen.has(key)) continue;
       seen.add(key);
-      messages.push({ role: blob.role, text, timestamp: null });
+      messages.push({ role: blob.role, text, timestamp: null, toolCalls: isToolOnly(text) ? toolCalls(text) : null });
     }
   }
   return messages;

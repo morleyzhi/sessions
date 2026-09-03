@@ -2,7 +2,15 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { extractContent, buildSearchText, firstPrompt, lastMessageTime, collapse } = require('./text');
+const {
+  extractContent,
+  buildSearchText,
+  firstPrompt,
+  lastMessageTime,
+  collapse,
+  isToolOnly,
+  toolCalls,
+} = require('./text');
 
 const ROOT = path.join(os.homedir(), '.claude', 'projects');
 
@@ -62,6 +70,7 @@ const parseFile = async (filePath) => {
       text,
       timestamp: event.timestamp ? Date.parse(event.timestamp) : null,
       isSidechain: Boolean(event.isSidechain),
+      toolCalls: isToolOnly(text) ? toolCalls(text) : null,
     });
   }
 

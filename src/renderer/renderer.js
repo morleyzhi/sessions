@@ -106,18 +106,61 @@ const render = () => {
   }
 };
 
-const renderDetail = (session, summary) => {
-  const live = liveKeys.has(keyOf(summary));
-  const messages = session.messages
+// A run of turns that only called tools, folded into one line you can open.
+const groupTurns = (messages) => {
+  const groups = [];
+  for (const message of messages) {
+    const calls = message.toolCalls;
+    if (!calls) {
+      groups.push({ type: 'message', message });
+      continue;
+    }
+    const last = groups[groups.length - 1];
+    if (last && last.type === 'tools') {
+      last.calls.push(...calls);
+      if (message.timestamp) last.timestamp = message.timestamp;
+      continue;
+    }
+    groups.push({ type: 'tools', calls: [...calls], timestamp: message.timestamp });
+  }
+  // A run whose every call was hidden leaves nothing worth showing.
+  return groups.filter((group) => group.type !== 'tools' || group.calls.length);
+};
+
+const renderTools = (group) => {
+  const label = group.calls.length === 1 ? '1 tool call' : `${group.calls.length} tool calls`;
+  const names = [...new Set(group.calls.map((call) => call.name))].slice(0, 4).join(', ');
+  const rows = group.calls
     .map(
-      (message) => `<div class="message ${message.role} ${message.isSidechain ? 'sidechain' : ''}">
-        <div class="role">
-          <span>${message.role}${message.isSidechain ? ' · subagent' : ''}</span>
-          ${message.timestamp ? `<span class="turn-time">${turnTime(message.timestamp)}</span>` : ''}
-        </div>
-        <div class="bubble">${escapeHtml(message.text)}</div>
+      (call) => `<div class="tool-call">
+        <span class="tool-name">${escapeHtml(call.name)}</span>
+        <span class="tool-summary">${escapeHtml(call.summary)}</span>
       </div>`
     )
+    .join('');
+  return `<details class="tools">
+    <summary>
+      <span class="tool-caret">▸</span>
+      <span class="tool-label">${label}</span>
+      <span class="tool-names">${escapeHtml(names)}</span>
+      ${group.timestamp ? `<span class="turn-time">${turnTime(group.timestamp)}</span>` : ''}
+    </summary>
+    <div class="tool-body">${rows}</div>
+  </details>`;
+};
+
+const renderMessage = (message) => `<div class="message ${message.role} ${message.isSidechain ? 'sidechain' : ''}">
+  <div class="role">
+    <span>${message.role}${message.isSidechain ? ' · subagent' : ''}</span>
+    ${message.timestamp ? `<span class="turn-time">${turnTime(message.timestamp)}</span>` : ''}
+  </div>
+  <div class="bubble">${escapeHtml(message.text)}</div>
+</div>`;
+
+const renderDetail = (session, summary) => {
+  const live = liveKeys.has(keyOf(summary));
+  const messages = groupTurns(session.messages)
+    .map((group) => (group.type === 'tools' ? renderTools(group) : renderMessage(group.message)))
     .join('');
 
   detailElement.innerHTML = `

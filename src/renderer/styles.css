@@ -251,3 +251,62 @@ main { flex: 1; display: flex; min-height: 0; }
 .message.user .bubble { border-color: rgba(122, 162, 247, 0.3); }
 
 .sidechain { opacity: 0.6; }
+
+.tools {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel);
+  margin-bottom: 14px;
+}
+
+.tools summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 7px 11px;
+  cursor: pointer;
+  list-style: none;
+  font-size: 11.5px;
+  color: var(--muted);
+}
+
+.tools summary::-webkit-details-marker { display: none; }
+
+.tool-caret {
+  font-size: 9px;
+  transition: transform 0.12s ease;
+}
+
+.tools[open] .tool-caret { transform: rotate(90deg); }
+
+.tool-label { color: var(--text); }
+
+.tool-names {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-body {
+  border-top: 1px solid var(--border);
+  padding: 6px 11px 8px;
+}
+
+.tool-call {
+  display: flex;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11.5px;
+  min-width: 0;
+}
+
+.tool-name { color: var(--text); flex: none; }
+
+.tool-summary {
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

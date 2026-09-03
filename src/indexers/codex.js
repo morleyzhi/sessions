@@ -2,7 +2,16 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
-const { extractContent, buildSearchText, firstPrompt, lastMessageTime, collapse } = require('./text');
+const {
+  extractContent,
+  buildSearchText,
+  firstPrompt,
+  lastMessageTime,
+  collapse,
+  isToolOnly,
+  toolCalls,
+  toolMarker,
+} = require('./text');
 
 const ROOT = path.join(os.homedir(), '.codex', 'sessions');
 const INDEX_FILE = path.join(os.homedir(), '.codex', 'session_index.jsonl');
@@ -71,14 +80,26 @@ const parseFile = async (filePath, titles = new Map()) => {
     if (event.type !== 'response_item') continue;
     const payload = event.payload || {};
     if (payload.type === 'function_call') {
-      messages.push({ role: 'assistant', text: `[tool: ${payload.name || 'unknown'}]`, timestamp: null });
+      let input = payload.arguments;
+      try {
+        input = JSON.parse(payload.arguments);
+      } catch {
+        // Codex writes the arguments as a JSON string; a malformed one is used as-is.
+      }
+      const text = toolMarker(payload.name || 'unknown', input);
+      messages.push({ role: 'assistant', text, timestamp: null, toolCalls: toolCalls(text) });
       continue;
     }
     if (payload.type !== 'message') continue;
     if (payload.role !== 'user' && payload.role !== 'assistant') continue;
     const text = extractContent(payload.content).trim();
     if (!text || isInjectedContext(text)) continue;
-    messages.push({ role: payload.role, text, timestamp: event.timestamp ? Date.parse(event.timestamp) : null });
+    messages.push({
+      role: payload.role,
+      text,
+      timestamp: event.timestamp ? Date.parse(event.timestamp) : null,
+      toolCalls: isToolOnly(text) ? toolCalls(text) : null,
+    });
   }
 
   const stats = fs.statSync(filePath);
