@@ -15,6 +15,110 @@ const escapeHtml = (value) =>
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
   })[character]);
 
+// Split a query the same way the search does: a quoted run stays one term.
+const queryTerms = (query) =>
+  (String(query || '')
+    .toLowerCase()
+    .match(/"[^"]*"?|\S+/g) || [])
+    .map((term) => term.replace(/"/g, '').trim())
+    .filter(Boolean);
+
+// Bold, italic, strikethrough and code, with links flattened to text (url).
+const inlineMarkdown = (text) =>
+  String(text)
+    .split(/(`[^`]+`)/)
+    .map((part) => {
+      if (part.length > 1 && part.startsWith('`') && part.endsWith('`')) {
+        return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
+      }
+      let out = escapeHtml(part);
+      out = out.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '$1 ($2)');
+      out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+      out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+      out = out.replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
+      out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+      return out;
+    })
+    .join('');
+
+// Enough markdown for a transcript: fenced code, headings, lists, quotes, rules.
+const markdown = (text) => {
+  const html = [];
+  let paragraph = [];
+  let list = null;
+  let fence = null;
+
+  const closeParagraph = () => {
+    if (!paragraph.length) return;
+    html.push(`<p>${paragraph.map(inlineMarkdown).join('<br>')}</p>`);
+    paragraph = [];
+  };
+  const closeList = () => {
+    if (!list) return;
+    const items = list.items.map((item) => `<li>${inlineMarkdown(item)}</li>`).join('');
+    html.push(`<${list.tag}>${items}</${list.tag}>`);
+    list = null;
+  };
+  const closeAll = () => {
+    closeParagraph();
+    closeList();
+  };
+
+  for (const line of String(text).split('\n')) {
+    const fenceMatch = line.match(/^\s*```/);
+    if (fence) {
+      if (fenceMatch) {
+        html.push(`<pre><code>${escapeHtml(fence.join('\n'))}</code></pre>`);
+        fence = null;
+      } else fence.push(line);
+      continue;
+    }
+    if (fenceMatch) {
+      closeAll();
+      fence = [];
+      continue;
+    }
+    if (!line.trim()) {
+      closeAll();
+      continue;
+    }
+    const heading = line.match(/^(#{1,6})\s+(.*)$/);
+    if (heading) {
+      closeAll();
+      html.push(`<div class="md-h md-h${heading[1].length}">${inlineMarkdown(heading[2])}</div>`);
+      continue;
+    }
+    if (/^\s*([-*_])\s*\1\s*\1[-*_\s]*$/.test(line)) {
+      closeAll();
+      html.push('<hr>');
+      continue;
+    }
+    const quote = line.match(/^\s*>\s?(.*)$/);
+    if (quote) {
+      closeAll();
+      html.push(`<blockquote>${inlineMarkdown(quote[1])}</blockquote>`);
+      continue;
+    }
+    const bullet = line.match(/^\s*[-*+]\s+(.*)$/);
+    const numbered = line.match(/^\s*\d+[.)]\s+(.*)$/);
+    if (bullet || numbered) {
+      closeParagraph();
+      const tag = bullet ? 'ul' : 'ol';
+      if (!list || list.tag !== tag) {
+        closeList();
+        list = { tag, items: [] };
+      }
+      list.items.push((bullet || numbered)[1]);
+      continue;
+    }
+    closeList();
+    paragraph.push(line);
+  }
+  if (fence) html.push(`<pre><code>${escapeHtml(fence.join('\n'))}</code></pre>`);
+  closeAll();
+  return html.join('');
+};
+
 const highlight = (text, terms) => {
   let output = escapeHtml(text);
   for (const term of terms) {
@@ -72,7 +176,7 @@ const rowContent = (session, terms) => {
  * unchanged row is only moved, and a moved row is not repainted.
  */
 const render = () => {
-  const terms = queryElement.value.toLowerCase().split(/\s+/).filter(Boolean);
+  const terms = queryTerms(queryElement.value);
   visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
 
   const existing = new Map();
@@ -154,7 +258,7 @@ const renderMessage = (message) => `<div class="message ${message.role} ${messag
     <span>${message.role}${message.isSidechain ? ' · subagent' : ''}</span>
     ${message.timestamp ? `<span class="turn-time">${turnTime(message.timestamp)}</span>` : ''}
   </div>
-  <div class="bubble">${escapeHtml(message.text)}</div>
+  <div class="bubble">${markdown(message.text)}</div>
 </div>`;
 
 const renderDetail = (session, summary) => {

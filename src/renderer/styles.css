@@ -241,11 +241,8 @@ main { flex: 1; display: flex; min-height: 0; }
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 13px;
-  white-space: pre-wrap;
   word-break: break-word;
   font: 12.5px/1.6 -apple-system, BlinkMacSystemFont, sans-serif;
-  max-height: 460px;
-  overflow-y: auto;
 }
 
 .message.user .bubble { border-color: rgba(122, 162, 247, 0.3); }
@@ -310,3 +307,43 @@ main { flex: 1; display: flex; min-height: 0; }
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.bubble > :first-child { margin-top: 0; }
+.bubble > :last-child { margin-bottom: 0; }
+
+.bubble p { margin: 0 0 10px; }
+
+.md-h { font-weight: 600; margin: 14px 0 6px; }
+.md-h1 { font-size: 15px; }
+.md-h2 { font-size: 14px; }
+.md-h3, .md-h4, .md-h5, .md-h6 { font-size: 13px; }
+
+.bubble ul, .bubble ol { margin: 0 0 10px; padding-left: 20px; }
+.bubble li { margin: 2px 0; }
+
+.bubble blockquote {
+  margin: 0 0 10px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+
+.bubble hr { border: 0; border-top: 1px solid var(--border); margin: 12px 0; }
+
+.bubble code {
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  padding: 1px 4px;
+  font: 11.5px/1.5 'SF Mono', Menlo, monospace;
+}
+
+.bubble pre {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow-x: auto;
+}
+
+.bubble pre code { background: none; padding: 0; white-space: pre; }

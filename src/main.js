@@ -73,6 +73,17 @@ const sendLiveKeys = () => {
   mainWindow.webContents.send('live-sessions', [...liveSessionKeys(sessions)]);
 };
 
+/**
+ * Split a query into terms. Every term has to appear somewhere in the session,
+ * and a quoted run stays one term, so "chain together" matches only that phrase.
+ */
+const queryTerms = (query) =>
+  (String(query || '')
+    .toLowerCase()
+    .match(/"[^"]*"?|\S+/g) || [])
+    .map((term) => term.replace(/"/g, '').trim())
+    .filter(Boolean);
+
 const matches = (session, terms) => {
   const haystack = `${session.title}\n${session.cwd}\n${session.searchText}`.toLowerCase();
   return terms.every((term) => haystack.includes(term));
@@ -106,7 +117,7 @@ ipcMain.handle('sessions:list', async () => {
 });
 
 ipcMain.handle('sessions:search', (event, query) => {
-  const terms = String(query || '').toLowerCase().split(/\s+/).filter(Boolean);
+  const terms = queryTerms(query);
   if (!terms.length) return sessions.map(summarize);
   return sessions
     .filter((session) => matches(session, terms))
