@@ -188,7 +188,10 @@ const toolPill = (tool) =>
 const keyOf = (session) => `${session.tool}:${session.id}`;
 
 const PIN_ICON =
-  '<svg class="pin-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.2 14.8 5.8l-1.1 1.1-1.3-.4-2.6 2.6.5 2.2-1.1 1.1-3-3L2.4 13 3 9.6l-3-3 1.1-1.1 2.2.5L5.9 3.4l-.4-1.3z"/></svg>';
+  '<svg class="pin-icon" viewBox="0 0 24 24" aria-hidden="true">' +
+  '<path d="M12 17v5" />' +
+  '<path d="M9 10.8a2 2 0 0 1-1.1 1.8l-1.8.9A2 2 0 0 0 5 15.2V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.8a2 2 0 0 0-1.1-1.8l-1.8-.9a2 2 0 0 1-1.1-1.8V7a1 1 0 0 1 1-1 2 2 0 0 0 0-4H8a2 2 0 0 0 0 4 1 1 0 0 1 1 1z" />' +
+  '</svg>';
 
 const rowContent = (session, terms) => {
   const snippet = session.snippet || session.preview;

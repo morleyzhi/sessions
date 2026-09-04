@@ -394,7 +394,15 @@ main { flex: 1; display: flex; min-height: 0; }
 .pin:hover { background: var(--panel-hover); color: var(--text); }
 .pin.on { color: var(--accent); }
 
-.pin-icon { width: 13px; height: 13px; fill: currentColor; }
+.pin-icon {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 
 .find { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
 
