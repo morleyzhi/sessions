@@ -90,6 +90,18 @@ main { flex: 1; display: flex; min-height: 0; }
 
 .list { list-style: none; margin: 0; padding: 0 4px 8px; overflow-y: auto; flex: 1; }
 
+/* Pinned sessions hold the top of the sidebar and never take more than half of
+   it; past that the pinned list scrolls on its own. */
+.pinned-list {
+  flex: none;
+  max-height: 50%;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 6px;
+}
+
+.pinned-list:empty { display: none; }
+
 .row {
   padding: 8px;
   border-radius: 8px;
@@ -364,3 +376,22 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 .md-table th { background: rgba(255, 255, 255, 0.04); font-weight: 600; }
+
+.row-top .pin {
+  flex: none;
+  margin-left: auto;
+  padding: 2px;
+  border: 0;
+  border-radius: 5px;
+  background: none;
+  color: var(--muted);
+  line-height: 0;
+  cursor: pointer;
+  opacity: 0;
+}
+
+.row:hover .pin, .pin.on { opacity: 1; }
+.pin:hover { background: var(--panel-hover); color: var(--text); }
+.pin.on { color: var(--accent); }
+
+.pin-icon { width: 13px; height: 13px; fill: currentColor; }

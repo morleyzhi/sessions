@@ -1,3 +1,4 @@
+const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, Menu, ipcMain, clipboard } = require('electron');
 const { buildIndex, loadSession, resumeCommandFor } = require('./indexers');
@@ -7,6 +8,30 @@ let mainWindow = null;
 let sessions = [];
 
 const cachePath = () => path.join(app.getPath('userData'), 'index.json');
+const pinsPath = () => path.join(app.getPath('userData'), 'pins.json');
+
+// Sessions you pinned, newest pin first. Kept as keys, so a pin outlives a re-index.
+let pinnedKeys = [];
+
+const loadPins = () => {
+  try {
+    const stored = JSON.parse(fs.readFileSync(pinsPath(), 'utf8'));
+    pinnedKeys = Array.isArray(stored) ? stored.filter((key) => typeof key === 'string') : [];
+  } catch {
+    pinnedKeys = [];
+  }
+};
+
+const togglePin = (key) => {
+  pinnedKeys = pinnedKeys.includes(key) ? pinnedKeys.filter((pin) => pin !== key) : [key, ...pinnedKeys];
+  try {
+    fs.writeFileSync(pinsPath(), JSON.stringify(pinnedKeys));
+  } catch {
+    // A pin that cannot be written still holds for this run.
+  }
+  mainWindow?.webContents.send('pins-updated', pinnedKeys);
+  return pinnedKeys;
+};
 
 const createWindow = () => {
   mainWindow = new BrowserWindow({
@@ -98,6 +123,7 @@ const snippetFor = (session, terms) => {
 };
 
 app.whenReady().then(() => {
+  loadPins();
   createWindow();
   setInterval(poll, 3000);
   app.on('activate', () => {
@@ -134,7 +160,10 @@ ipcMain.on('sessions:contextMenu', (event, summary) => {
     enabled: Boolean(value),
     click: () => clipboard.writeText(String(value)),
   });
+  const key = `${summary.tool}:${summary.id}`;
   const menu = Menu.buildFromTemplate([
+    { label: pinnedKeys.includes(key) ? 'Unpin' : 'Pin to Top', click: () => togglePin(key) },
+    { type: 'separator' },
     copyItem('Copy Command', summary.resumeCommand),
     { type: 'separator' },
     copyItem('Copy Title', summary.title),
@@ -144,6 +173,10 @@ ipcMain.on('sessions:contextMenu', (event, summary) => {
   ]);
   menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
 });
+
+ipcMain.handle('pins:list', () => pinnedKeys);
+
+ipcMain.handle('pins:toggle', (event, key) => togglePin(String(key)));
 
 ipcMain.handle('sessions:copyResume', (event, summary) => {
   const command = resumeCommandFor(summary);

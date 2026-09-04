@@ -1,4 +1,5 @@
 const listElement = document.getElementById('list');
+const pinnedElement = document.getElementById('pinned');
 const detailElement = document.getElementById('detail');
 const queryElement = document.getElementById('query');
 const filtersElement = document.getElementById('filters');
@@ -8,6 +9,7 @@ let visibleSessions = [];
 let activeTool = 'all';
 let selectedKey = '';
 let liveKeys = new Set();
+let pinnedKeys = new Set();
 let detailKey = '';
 
 const escapeHtml = (value) =>
@@ -185,13 +187,19 @@ const toolPill = (tool) =>
 
 const keyOf = (session) => `${session.tool}:${session.id}`;
 
+const PIN_ICON =
+  '<svg class="pin-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M10.2 1.2 14.8 5.8l-1.1 1.1-1.3-.4-2.6 2.6.5 2.2-1.1 1.1-3-3L2.4 13 3 9.6l-3-3 1.1-1.1 2.2.5L5.9 3.4l-.4-1.3z"/></svg>';
+
 const rowContent = (session, terms) => {
   const snippet = session.snippet || session.preview;
-  const live = liveKeys.has(keyOf(session));
+  const key = keyOf(session);
+  const live = liveKeys.has(key);
+  const pinned = pinnedKeys.has(key);
   return `<div class="row-top">
       <span class="dot ${session.tool}"></span>
       <span class="row-title">${highlight(session.title, terms)}</span>
       ${live ? '<span class="live-tag" title="A running CLI owns this session, so it cannot be resumed until you quit it">live</span>' : ''}
+      <button class="pin ${pinned ? 'on' : ''}" title="${pinned ? 'Unpin' : 'Pin to top'}">${PIN_ICON}</button>
     </div>
     <div class="row-meta">
       <span>${escapeHtml(session.project || '—')}</span>
@@ -201,19 +209,16 @@ const rowContent = (session, terms) => {
 };
 
 /**
- * Update the list in place, matching rows by key. Rewriting the whole list on
+ * Update one list in place, matching rows by key. Rewriting the whole list on
  * every poll made rows flicker as a live session re-sorted to the top; here an
  * unchanged row is only moved, and a moved row is not repainted.
  */
-const render = () => {
-  const terms = queryTerms(queryElement.value);
-  visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
-
+const renderList = (element, sessions, terms) => {
   const existing = new Map();
-  for (const row of listElement.children) existing.set(row.dataset.key, row);
+  for (const row of element.children) existing.set(row.dataset.key, row);
 
-  let cursor = listElement.firstElementChild;
-  for (const session of visibleSessions) {
+  let cursor = element.firstElementChild;
+  for (const session of sessions) {
     const key = keyOf(session);
     let row = existing.get(key);
     if (!row) {
@@ -223,7 +228,7 @@ const render = () => {
       row.dataset.key = key;
     }
     if (row === cursor) cursor = cursor.nextElementSibling;
-    else listElement.insertBefore(row, cursor);
+    else element.insertBefore(row, cursor);
 
     const content = rowContent(session, terms);
     if (row.renderedContent !== content) {
@@ -238,6 +243,18 @@ const render = () => {
     cursor.remove();
     cursor = next;
   }
+};
+
+const render = () => {
+  const terms = queryTerms(queryElement.value);
+  visibleSessions = allSessions.filter((session) => activeTool === 'all' || session.tool === activeTool);
+  // Pinned sessions sit above the rest, in the order you pinned them.
+  const order = [...pinnedKeys];
+  const pinned = visibleSessions
+    .filter((session) => pinnedKeys.has(keyOf(session)))
+    .sort((left, right) => order.indexOf(keyOf(left)) - order.indexOf(keyOf(right)));
+  renderList(pinnedElement, pinned, terms);
+  renderList(listElement, visibleSessions.filter((session) => !pinnedKeys.has(keyOf(session))), terms);
 };
 
 // A run of turns that only called tools, folded into one line you can open.
@@ -324,6 +341,11 @@ const renderDetail = (session, summary) => {
   });
 };
 
+const setPins = (keys) => {
+  pinnedKeys = new Set(keys);
+  render();
+};
+
 const select = async (key) => {
   // Clicking the row already shown in the detail pane does nothing.
   if (key === detailKey) return;
@@ -342,32 +364,42 @@ const select = async (key) => {
   renderDetail(session, summary);
 };
 
-listElement.addEventListener('click', (event) => {
-  const row = event.target.closest('.row');
-  if (row) select(row.dataset.key);
-});
+const attachRowHandlers = (element) => {
+  element.addEventListener('click', async (event) => {
+    const row = event.target.closest('.row');
+    if (!row) return;
+    if (event.target.closest('.pin')) {
+      setPins(await window.sessions.togglePin(row.dataset.key));
+      return;
+    }
+    select(row.dataset.key);
+  });
 
-listElement.addEventListener('contextmenu', (event) => {
-  const row = event.target.closest('.row');
-  if (!row) return;
-  event.preventDefault();
-  const session = visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
-  if (session) window.sessions.contextMenu(session);
-});
+  element.addEventListener('contextmenu', (event) => {
+    const row = event.target.closest('.row');
+    if (!row) return;
+    event.preventDefault();
+    const session = visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
+    if (session) window.sessions.contextMenu(session);
+  });
 
-// Dropping a row on iTerm2 pastes the resume command; the trailing newline runs it.
-listElement.addEventListener('dragstart', (event) => {
-  const row = event.target.closest('.row');
-  const session = row && visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
-  if (!session || !session.resumeCommand) return;
-  event.dataTransfer.setData('text/plain', `${session.resumeCommand}\n`);
-  event.dataTransfer.effectAllowed = 'copy';
-  row.classList.add('dragging');
-});
+  // Dropping a row on iTerm2 pastes the resume command; the trailing newline runs it.
+  element.addEventListener('dragstart', (event) => {
+    const row = event.target.closest('.row');
+    const session = row && visibleSessions.find((candidate) => keyOf(candidate) === row.dataset.key);
+    if (!session || !session.resumeCommand) return;
+    event.dataTransfer.setData('text/plain', `${session.resumeCommand}\n`);
+    event.dataTransfer.effectAllowed = 'copy';
+    row.classList.add('dragging');
+  });
 
-listElement.addEventListener('dragend', (event) => {
-  event.target.closest('.row')?.classList.remove('dragging');
-});
+  element.addEventListener('dragend', (event) => {
+    event.target.closest('.row')?.classList.remove('dragging');
+  });
+};
+
+attachRowHandlers(pinnedElement);
+attachRowHandlers(listElement);
 
 filtersElement.addEventListener('click', (event) => {
   const button = event.target.closest('.filter');
@@ -401,6 +433,13 @@ window.sessions.onLive((keys) => {
 
 window.sessions.onProgress(({ done, total }) => {
   queryElement.placeholder = done < total ? `Indexing ${done} / ${total}…` : 'Search sessions';
+});
+
+window.sessions.onPins(setPins);
+
+window.sessions.pins().then((keys) => {
+  pinnedKeys = new Set(keys);
+  render();
 });
 
 window.sessions.list().then((sessions) => {
