@@ -347,3 +347,20 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 
 .bubble pre code { background: none; padding: 0; white-space: pre; }
+
+.md-table { overflow-x: auto; margin: 0 0 10px; }
+
+.md-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.md-table th, .md-table td {
+  border: 1px solid var(--border);
+  padding: 5px 8px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-table th { background: rgba(255, 255, 255, 0.04); font-weight: 600; }

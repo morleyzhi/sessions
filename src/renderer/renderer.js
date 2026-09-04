@@ -24,25 +24,37 @@ const queryTerms = (query) =>
     .filter(Boolean);
 
 // Bold, italic, strikethrough and code, with links flattened to text (url).
-const inlineMarkdown = (text) =>
-  String(text)
-    .split(/(`[^`]+`)/)
-    .map((part) => {
-      if (part.length > 1 && part.startsWith('`') && part.endsWith('`')) {
-        return `<code>${escapeHtml(part.slice(1, -1))}</code>`;
-      }
-      let out = escapeHtml(part);
-      out = out.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '$1 ($2)');
-      out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
-      out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
-      out = out.replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
-      out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-      return out;
-    })
-    .join('');
+// Code spans are pulled out first so that bold wrapped around one still pairs up.
+const inlineMarkdown = (text) => {
+  const codeSpans = [];
+  let out = String(text).replace(/`([^`]+)`/g, (match, code) => {
+    codeSpans.push(code);
+    return `${codeSpans.length - 1}`;
+  });
+  out = escapeHtml(out);
+  out = out.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '$1 ($2)');
+  out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+  out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
+  out = out.replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
+  out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  return out.replace(/(\d+)/g, (match, index) => `<code>${escapeHtml(codeSpans[Number(index)])}</code>`);
+};
 
-// Enough markdown for a transcript: fenced code, headings, lists, quotes, rules.
+const tableCells = (line) =>
+  line
+    .trim()
+    .replace(/^\|/, '')
+    .replace(/\|$/, '')
+    .split('|')
+    .map((cell) => cell.trim());
+
+const isTableRow = (line) => /^\s*\|/.test(line);
+
+const isTableRule = (line) => /^\s*\|?[\s:|-]*-[\s:|-]*$/.test(line) && line.includes('-');
+
+// Enough markdown for a transcript: fenced code, tables, headings, lists, quotes, rules.
 const markdown = (text) => {
+  const lines = String(text).split('\n');
   const html = [];
   let paragraph = [];
   let list = null;
@@ -64,8 +76,9 @@ const markdown = (text) => {
     closeList();
   };
 
-  for (const line of String(text).split('\n')) {
-    const fenceMatch = line.match(/^\s*```/);
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    const fenceMatch = /^\s*```/.test(line);
     if (fence) {
       if (fenceMatch) {
         html.push(`<pre><code>${escapeHtml(fence.join('\n'))}</code></pre>`);
@@ -80,6 +93,23 @@ const markdown = (text) => {
     }
     if (!line.trim()) {
       closeAll();
+      continue;
+    }
+    if (isTableRow(line) && isTableRule(lines[index + 1] || '')) {
+      closeAll();
+      const header = tableCells(line);
+      const rows = [];
+      let next = index + 2;
+      while (next < lines.length && isTableRow(lines[next])) {
+        rows.push(tableCells(lines[next]));
+        next++;
+      }
+      index = next - 1;
+      const head = header.map((cell) => `<th>${inlineMarkdown(cell)}</th>`).join('');
+      const body = rows
+        .map((row) => `<tr>${row.map((cell) => `<td>${inlineMarkdown(cell)}</td>`).join('')}</tr>`)
+        .join('');
+      html.push(`<div class="md-table"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`);
       continue;
     }
     const heading = line.match(/^(#{1,6})\s+(.*)$/);
