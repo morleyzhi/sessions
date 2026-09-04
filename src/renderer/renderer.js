@@ -308,11 +308,76 @@ const renderMessage = (message) => `<div class="message ${message.role} ${messag
   <div class="bubble">${markdown(message.text)}</div>
 </div>`;
 
+// The rendered turns of the open session, kept so a find can rebuild them.
+let messagesHtml = '';
+let findMarks = [];
+let findIndex = 0;
+
+const findCountElement = () => document.getElementById('find-count');
+
+const focusMatch = (index) => {
+  if (!findMarks.length) return;
+  findIndex = (index + findMarks.length) % findMarks.length;
+  findMarks.forEach((mark, position) => mark.classList.toggle('current', position === findIndex));
+  findMarks[findIndex].scrollIntoView({ block: 'center' });
+  findCountElement().textContent = `${findIndex + 1} of ${findMarks.length}`;
+};
+
+// Mark every occurrence of the text in the open session, opening any collapsed
+// run of tool calls that holds one.
+const applyFind = (term) => {
+  const messagesElement = detailElement.querySelector('.messages');
+  if (!messagesElement) return;
+  messagesElement.innerHTML = messagesHtml;
+  findMarks = [];
+  findIndex = 0;
+  const count = findCountElement();
+  const needle = term.toLowerCase();
+  if (!needle) {
+    count.textContent = '';
+    return;
+  }
+
+  const walker = document.createTreeWalker(messagesElement, NodeFilter.SHOW_TEXT);
+  const targets = [];
+  while (walker.nextNode()) {
+    if (walker.currentNode.nodeValue.toLowerCase().includes(needle)) targets.push(walker.currentNode);
+  }
+
+  for (const node of targets) {
+    const text = node.nodeValue;
+    const fragment = document.createDocumentFragment();
+    let position = 0;
+    let at = text.toLowerCase().indexOf(needle);
+    while (at !== -1) {
+      fragment.appendChild(document.createTextNode(text.slice(position, at)));
+      const mark = document.createElement('mark');
+      mark.className = 'find';
+      mark.textContent = text.slice(at, at + term.length);
+      fragment.appendChild(mark);
+      findMarks.push(mark);
+      position = at + term.length;
+      at = text.toLowerCase().indexOf(needle, position);
+    }
+    fragment.appendChild(document.createTextNode(text.slice(position)));
+    node.parentNode.replaceChild(fragment, node);
+  }
+
+  for (const mark of findMarks) mark.closest('details')?.setAttribute('open', '');
+  if (!findMarks.length) {
+    count.textContent = 'no matches';
+    return;
+  }
+  focusMatch(0);
+};
+
 const renderDetail = (session, summary) => {
   const live = liveKeys.has(keyOf(summary));
-  const messages = groupTurns(session.messages)
-    .map((group) => (group.type === 'tools' ? renderTools(group) : renderMessage(group.message)))
-    .join('');
+  messagesHtml =
+    groupTurns(session.messages)
+      .map((group) => (group.type === 'tools' ? renderTools(group) : renderMessage(group.message)))
+      .join('') || '<div class="empty">No readable messages</div>';
+  findMarks = [];
 
   detailElement.innerHTML = `
     <div class="detail-header">
@@ -327,8 +392,33 @@ const renderDetail = (session, summary) => {
         <code id="resume-command">${escapeHtml(session.resumeCommand)}</code>
         <button class="copy" id="copy">Copy resume command</button>
       </div>
+      <div class="find">
+        <input id="find" type="search" placeholder="Find in this session" spellcheck="false" />
+        <span class="find-count" id="find-count"></span>
+        <button class="find-step" id="find-prev" title="Previous match">↑</button>
+        <button class="find-step" id="find-next" title="Next match">↓</button>
+      </div>
     </div>
-    <div class="messages">${messages || '<div class="empty">No readable messages</div>'}</div>`;
+    <div class="messages">${messagesHtml}</div>`;
+
+  const findElement = document.getElementById('find');
+  let findTimer = null;
+  findElement.addEventListener('input', () => {
+    clearTimeout(findTimer);
+    findTimer = setTimeout(() => applyFind(findElement.value), 120);
+  });
+  findElement.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      findElement.value = '';
+      applyFind('');
+      return;
+    }
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    focusMatch(findIndex + (event.shiftKey ? -1 : 1));
+  });
+  document.getElementById('find-prev').addEventListener('click', () => focusMatch(findIndex - 1));
+  document.getElementById('find-next').addEventListener('click', () => focusMatch(findIndex + 1));
 
   document.getElementById('copy').addEventListener('click', async (event) => {
     await window.sessions.copyResume(summary);
@@ -433,6 +523,13 @@ window.sessions.onLive((keys) => {
 
 window.sessions.onProgress(({ done, total }) => {
   queryElement.placeholder = done < total ? `Indexing ${done} / ${total}…` : 'Search sessions';
+});
+
+document.addEventListener('keydown', (event) => {
+  if (!(event.metaKey || event.ctrlKey) || event.key !== 'f') return;
+  const find = document.getElementById('find');
+  event.preventDefault();
+  (find || queryElement).select();
 });
 
 window.sessions.onPins(setPins);

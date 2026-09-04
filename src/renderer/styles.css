@@ -395,3 +395,36 @@ main { flex: 1; display: flex; min-height: 0; }
 .pin.on { color: var(--accent); }
 
 .pin-icon { width: 13px; height: 13px; fill: currentColor; }
+
+.find { display: flex; gap: 8px; margin-top: 8px; align-items: center; }
+
+.find input {
+  flex: 1;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12.5px;
+  outline: none;
+}
+
+.find input:focus { border-color: var(--accent); }
+
+.find-count { color: var(--muted); font-size: 11.5px; min-width: 64px; text-align: right; }
+
+.find-step {
+  border: 1px solid var(--border);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 6px;
+  width: 26px;
+  height: 26px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.find-step:hover { background: var(--panel-hover); color: var(--text); }
+
+mark.find { background: rgba(122, 162, 247, 0.28); color: var(--text); border-radius: 2px; }
+mark.find.current { background: #f2c14e; color: #1a1a1a; }
