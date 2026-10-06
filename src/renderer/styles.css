@@ -436,3 +436,49 @@ main { flex: 1; display: flex; min-height: 0; }
 
 mark.find { background: rgba(122, 162, 247, 0.28); color: var(--text); border-radius: 2px; }
 mark.find.current { background: #f2c14e; color: #1a1a1a; }
+
+
+.pinned-list .row { background: #1b2232; margin-bottom: 3px; }
+.pinned-list .row:hover { background: #242e43; }
+.pinned-list .row.selected { background: #2a3750; border-color: var(--accent); }
+.pin.on .pin-icon { transform: rotate(45deg); }
+
+.detail { overflow-y: scroll; scrollbar-gutter: stable; }
+.detail::-webkit-scrollbar-thumb { background: #4d5361; background-clip: padding-box; }
+.detail-header { z-index: 2; }
+
+.message > summary { cursor: pointer; list-style: none; }
+.message > summary::-webkit-details-marker { display: none; }
+.message .role > .turn-time { margin-left: auto; }
+.message .role { justify-content: flex-start; }
+.turn-caret { font-size: 9px; }
+.message[open] > summary .turn-caret { transform: rotate(90deg); }
+.message:not([open]) > summary { padding: 8px 0; }
+.turn-content { position: relative; max-height: 400px; overflow: hidden; }
+.message.expanded > .turn-content { max-height: none; }
+.message.long:not(.expanded) > .turn-content::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 64px;
+  background: linear-gradient(transparent, var(--bg));
+  pointer-events: none;
+}
+.turn-content > .bubble + .bubble, .turn-content > .tools { margin-top: 8px; }
+.turn-content > .tools { margin-bottom: 0; }
+.turn-expand, .scroll-bottom {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel-hover);
+  color: var(--text);
+  padding: 6px 12px;
+  cursor: pointer;
+}
+.turn-expand { display: block; margin: 6px auto 0; }
+.turn-expand:hover, .scroll-bottom:hover { border-color: var(--accent); }
+.scroll-bottom { position: fixed; right: 32px; bottom: 20px; z-index: 3; box-shadow: 0 2px 12px #0008; }
+[hidden] { display: none !important; }
+a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+a:hover { color: var(--text); }

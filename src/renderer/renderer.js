@@ -25,21 +25,38 @@ const queryTerms = (query) =>
     .map((term) => term.replace(/"/g, '').trim())
     .filter(Boolean);
 
-// Bold, italic, strikethrough and code, with links flattened to text (url).
+// Format inline text and open web links in the default browser.
 // Code spans are pulled out first so that bold wrapped around one still pairs up.
 const inlineMarkdown = (text) => {
   const codeSpans = [];
+  const links = [];
+  const link = (url, label) => {
+    const short = url.replace(/^https?:\/\//, '');
+    const slash = short.indexOf('/');
+    const display = slash !== -1 && short.length - slash - 1 > 10
+      ? `${short.slice(0, slash + 1)}…${short.slice(-10)}` : short;
+    links.push(`<a href="${escapeHtml(url)}" title="${escapeHtml(url)}">${escapeHtml(label && !/^https?:\/\//.test(label) ? label : display)}</a>`);
+    return `${links.length - 1}`;
+  };
   let out = String(text).replace(/`([^`]+)`/g, (match, code) => {
     codeSpans.push(code);
     return `${codeSpans.length - 1}`;
   });
+  out = out.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g, (match, label, url) => link(url, label));
+  out = out.replace(/https?:\/\/[^\s<>"']+/g, (url) => {
+    const clean = url.replace(/[.,;:!?]+$/, '').replace(/\)+$/, (tail) => {
+      const extra = Math.max(0, (url.match(/\)/g) || []).length - (url.match(/\(/g) || []).length);
+      return tail.slice(0, Math.max(0, tail.length - extra));
+    });
+    return link(clean) + url.slice(clean.length);
+  });
   out = escapeHtml(out);
-  out = out.replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '$1 ($2)');
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   out = out.replace(/(^|[\s(])_([^_\n]+)_/g, '$1<em>$2</em>');
   out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
-  return out.replace(/(\d+)/g, (match, index) => `<code>${escapeHtml(codeSpans[Number(index)])}</code>`);
+  return out.replace(/(\d+)/g, (match, index) => `<code>${escapeHtml(codeSpans[Number(index)])}</code>`)
+    .replace(/(\d+)/g, (match, index) => links[Number(index)]);
 };
 
 const tableCells = (line) =>
@@ -260,25 +277,20 @@ const render = () => {
   renderList(listElement, visibleSessions.filter((session) => !pinnedKeys.has(keyOf(session))), terms);
 };
 
-// A run of turns that only called tools, folded into one line you can open.
+// Consecutive assistant messages and their tools share one fold control.
 const groupTurns = (messages) => {
   const groups = [];
   for (const message of messages) {
-    const calls = message.toolCalls;
-    if (!calls) {
-      groups.push({ type: 'message', message });
-      continue;
-    }
+    if (message.toolCalls && !message.toolCalls.length) continue;
+    const role = message.toolCalls ? 'assistant' : message.role;
     const last = groups[groups.length - 1];
-    if (last && last.type === 'tools') {
-      last.calls.push(...calls);
-      if (message.timestamp) last.timestamp = message.timestamp;
-      continue;
+    if (role === 'assistant' && last?.role === role && last.isSidechain === message.isSidechain) {
+      last.messages.push(message);
+    } else {
+      groups.push({ role, timestamp: message.timestamp, isSidechain: message.isSidechain, messages: [message] });
     }
-    groups.push({ type: 'tools', calls: [...calls], timestamp: message.timestamp });
   }
-  // A run whose every call was hidden leaves nothing worth showing.
-  return groups.filter((group) => group.type !== 'tools' || group.calls.length);
+  return groups;
 };
 
 const renderTools = (group) => {
@@ -297,19 +309,64 @@ const renderTools = (group) => {
       <span class="tool-caret">▸</span>
       <span class="tool-label">${label}</span>
       <span class="tool-names">${escapeHtml(names)}</span>
-      ${group.timestamp ? `<span class="turn-time">${turnTime(group.timestamp)}</span>` : ''}
     </summary>
     <div class="tool-body">${rows}</div>
   </details>`;
 };
 
-const renderMessage = (message) => `<div class="message ${message.role} ${message.isSidechain ? 'sidechain' : ''}">
-  <div class="role">
-    <span>${message.role}${message.isSidechain ? ' · subagent' : ''}</span>
-    ${message.timestamp ? `<span class="turn-time">${turnTime(message.timestamp)}</span>` : ''}
-  </div>
-  <div class="bubble">${markdown(message.text)}</div>
-</div>`;
+const renderMessage = (turn) => `<details open class="message ${escapeHtml(turn.role)} ${turn.isSidechain ? 'sidechain' : ''}">
+  <summary class="role" title="Fold or unfold this turn">
+    <span class="turn-caret">▸</span>
+    <span>${escapeHtml(turn.role)}${turn.isSidechain ? ' · subagent' : ''}</span>
+    ${turn.timestamp ? `<span class="turn-time">${turnTime(turn.timestamp)}</span>` : ''}
+  </summary>
+  <div class="turn-content">${turn.messages.map((message) => message.toolCalls
+    ? renderTools({ calls: message.toolCalls })
+    : `<div class="bubble">${markdown(message.text)}</div>`).join('')}</div>
+  <button class="turn-expand" aria-expanded="false" hidden>Expand</button>
+</details>`;
+
+const updateTurns = () => {
+  for (const turn of detailElement.querySelectorAll('.message[open]')) {
+    const content = turn.querySelector('.turn-content');
+    const long = content.scrollHeight > 400;
+    turn.classList.toggle('long', long);
+    turn.querySelector('.turn-expand').hidden = !long;
+  }
+  updateBottomButton();
+};
+
+const updateBottomButton = () => {
+  const button = detailElement.querySelector('.scroll-bottom');
+  if (button) button.hidden = detailElement.scrollHeight - detailElement.scrollTop - detailElement.clientHeight <= 32;
+};
+
+const expandTurn = (turn, expanded) => {
+  turn.classList.toggle('expanded', expanded);
+  const button = turn.querySelector('.turn-expand');
+  button.textContent = expanded ? 'Retract' : 'Expand';
+  button.setAttribute('aria-expanded', String(expanded));
+};
+
+const detailResizeObserver = new ResizeObserver(updateTurns);
+detailResizeObserver.observe(detailElement);
+detailElement.addEventListener('scroll', updateBottomButton);
+detailElement.addEventListener('toggle', updateTurns, true);
+detailElement.addEventListener('click', (event) => {
+  const link = event.target.closest('a[href]');
+  if (link) {
+    event.preventDefault();
+    window.sessions.openLink(link.href);
+  }
+  const expand = event.target.closest('.turn-expand');
+  if (expand) {
+    const turn = expand.closest('.message');
+    expandTurn(turn, !turn.classList.contains('expanded'));
+    if (!turn.classList.contains('expanded')) turn.scrollIntoView({ block: 'nearest' });
+    updateBottomButton();
+  }
+  if (event.target.closest('.scroll-bottom')) detailElement.scrollTo({ top: detailElement.scrollHeight, behavior: 'smooth' });
+});
 
 // The rendered turns of the open session, kept so a find can rebuild them.
 let messagesHtml = '';
@@ -338,6 +395,7 @@ const applyFind = (term) => {
   const needle = term.toLowerCase();
   if (!needle) {
     count.textContent = '';
+    updateTurns();
     return;
   }
 
@@ -366,7 +424,14 @@ const applyFind = (term) => {
     node.parentNode.replaceChild(fragment, node);
   }
 
-  for (const mark of findMarks) mark.closest('details')?.setAttribute('open', '');
+  for (const mark of findMarks) {
+    for (let parent = mark.parentElement; parent !== messagesElement; parent = parent.parentElement) {
+      if (parent.tagName === 'DETAILS') parent.open = true;
+    }
+    const turn = mark.closest('.message');
+    if (turn) expandTurn(turn, true);
+  }
+  updateTurns();
   if (!findMarks.length) {
     count.textContent = 'no matches';
     return;
@@ -378,7 +443,7 @@ const renderDetail = (session, summary) => {
   const live = liveKeys.has(keyOf(summary));
   messagesHtml =
     groupTurns(session.messages)
-      .map((group) => (group.type === 'tools' ? renderTools(group) : renderMessage(group.message)))
+      .map(renderMessage)
       .join('') || '<div class="empty">No readable messages</div>';
   findMarks = [];
 
@@ -402,7 +467,12 @@ const renderDetail = (session, summary) => {
         <button class="find-step" id="find-next" title="Next match">↓</button>
       </div>
     </div>
-    <div class="messages">${messagesHtml}</div>`;
+    <div class="messages">${messagesHtml}</div>
+    <button class="scroll-bottom" hidden>↓ Scroll to bottom</button>`;
+  detailResizeObserver.disconnect();
+  detailResizeObserver.observe(detailElement);
+  detailResizeObserver.observe(detailElement.querySelector('.messages'));
+  updateTurns();
 
   const findElement = document.getElementById('find');
   let findTimer = null;

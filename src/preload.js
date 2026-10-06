@@ -5,6 +5,7 @@ contextBridge.exposeInMainWorld('sessions', {
   search: (query) => ipcRenderer.invoke('sessions:search', query),
   open: (target) => ipcRenderer.invoke('sessions:open', target),
   copyResume: (summary) => ipcRenderer.invoke('sessions:copyResume', summary),
+  openLink: (url) => ipcRenderer.invoke('sessions:openLink', url),
   pins: () => ipcRenderer.invoke('pins:list'),
   togglePin: (key) => ipcRenderer.invoke('pins:toggle', key),
   onPins: (handler) => ipcRenderer.on('pins-updated', (event, keys) => handler(keys)),

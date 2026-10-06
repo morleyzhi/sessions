@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { app, BrowserWindow, Menu, ipcMain, clipboard } = require('electron');
+const { app, BrowserWindow, Menu, ipcMain, clipboard, shell } = require('electron');
 const { buildIndex, loadSession, resumeCommandFor } = require('./indexers');
 const { liveSessionKeys } = require('./live');
 
@@ -182,4 +182,10 @@ ipcMain.handle('sessions:copyResume', (event, summary) => {
   const command = resumeCommandFor(summary);
   clipboard.writeText(command);
   return command;
+});
+
+
+ipcMain.handle('sessions:openLink', (event, url) => {
+  const parsed = new URL(url);
+  if (parsed.protocol === 'https:' || parsed.protocol === 'http:') return shell.openExternal(parsed.href);
 });
