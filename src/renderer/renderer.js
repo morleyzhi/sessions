@@ -320,16 +320,16 @@ const renderMessage = (turn) => `<details open class="message ${escapeHtml(turn.
     <span>${escapeHtml(turn.role)}${turn.isSidechain ? ' · subagent' : ''}</span>
     ${turn.timestamp ? `<span class="turn-time">${turnTime(turn.timestamp)}</span>` : ''}
   </summary>
-  <div class="turn-content">${turn.messages.map((message) => message.toolCalls
+  <div class="turn-content bubble">${turn.messages.map((message) => message.toolCalls
     ? renderTools({ calls: message.toolCalls })
-    : `<div class="bubble">${markdown(message.text)}</div>`).join('')}</div>
+    : `<div class="turn-text">${markdown(message.text)}</div>`).join('')}</div>
   <button class="turn-expand" aria-expanded="false" hidden>Expand</button>
 </details>`;
 
 const updateTurns = () => {
   for (const turn of detailElement.querySelectorAll('.message[open]')) {
     const content = turn.querySelector('.turn-content');
-    const long = content.scrollHeight > 400;
+    const long = content.scrollHeight + 2 > 600;
     turn.classList.toggle('long', long);
     turn.querySelector('.turn-expand').hidden = !long;
   }
@@ -379,12 +379,22 @@ const focusMatch = (index) => {
   if (!findMarks.length) return;
   findIndex = (index + findMarks.length) % findMarks.length;
   findMarks.forEach((mark, position) => mark.classList.toggle('current', position === findIndex));
-  findMarks[findIndex].scrollIntoView({ block: 'center' });
+  const mark = findMarks[findIndex];
+  for (let parent = mark.parentElement; parent && parent !== detailElement; parent = parent.parentElement) {
+    if (parent.tagName === 'DETAILS') parent.open = true;
+  }
+  updateTurns();
+  const turn = mark.closest('.message');
+  const content = turn?.querySelector('.turn-content');
+  if (turn?.classList.contains('long') && mark.getBoundingClientRect().bottom > content.getBoundingClientRect().bottom - 64) {
+    expandTurn(turn, true);
+  }
+  mark.scrollIntoView({ block: 'center' });
+  updateBottomButton();
   findCountElement().textContent = `${findIndex + 1} of ${findMarks.length}`;
 };
 
-// Mark every occurrence of the text in the open session, opening any collapsed
-// run of tool calls that holds one.
+// Search all turn text, including folded and shortened content.
 const applyFind = (term) => {
   const messagesElement = detailElement.querySelector('.messages');
   if (!messagesElement) return;
@@ -424,13 +434,6 @@ const applyFind = (term) => {
     node.parentNode.replaceChild(fragment, node);
   }
 
-  for (const mark of findMarks) {
-    for (let parent = mark.parentElement; parent !== messagesElement; parent = parent.parentElement) {
-      if (parent.tagName === 'DETAILS') parent.open = true;
-    }
-    const turn = mark.closest('.message');
-    if (turn) expandTurn(turn, true);
-  }
   updateTurns();
   if (!findMarks.length) {
     count.textContent = 'no matches';
