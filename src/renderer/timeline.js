@@ -6,6 +6,7 @@ const timelineStatus = document.getElementById('timeline-status');
 let timelineRows = [];
 const timelineZoom = document.getElementById('timeline-zoom');
 let timelineScale = 1;
+let timelineTimeScale = null;
 let timelineHeight = 0;
 let timelineLanes = [];
 let timelineNow = Date.now();
@@ -30,12 +31,13 @@ const setMode = (mode) => {
 document.getElementById('sessions-tab').onclick = () => setMode('sessions');
 document.getElementById('timeline-tab').onclick = () => setMode('timeline');
 
-const timelineY = (time) => Math.max(0, (timelineNow - time) * timelineScale);
-const timelineTime = (y) => timelineNow - y / timelineScale;
+const timelineY = (time) => timelineTimeScale ? timelineTimeScale.yAt(time) : 0;
+const timelineTime = (y) => timelineTimeScale ? timelineTimeScale.timeAt(y) : timelineNow;
 
 const buildTimeline = () => {
   timelineHeight = Math.max(100, timelineScroll.clientHeight - 50);
   timelineScale = timelineHeight / (Number(timelineZoom.value) * 60000);
+  timelineTimeScale = createTimeScale(timelineRows, timelineNow, timelineScale);
   const previous = new Map();
   let bottom = timelineHeight;
   for (const row of timelineRows) {
@@ -167,8 +169,27 @@ const paintTimeline = () => {
   };
   const tickMinutes = Number(timelineZoom.value) <= 30 ? 5 : Number(timelineZoom.value) <= 120 ? 10 : 30;
   const step = tickMinutes * 60000;
-  for (let time = Math.floor(timelineTime(top) / step) * step; timelineY(time) <= bottom + 40; time -= step) {
-    label(time, timelineY(time));
+  for (const segment of timelineTimeScale.segments) {
+    if (segment.bottom < top || segment.top > bottom + 40) continue;
+    if (segment.gap) {
+      const marker = document.createElement('div');
+      marker.className = 'timeline-gap';
+      const minutes = Math.round((segment.newer - segment.older) / 60000);
+      const duration = minutes >= 1440 ? `${Math.floor(minutes / 1440)}d ${Math.floor(minutes % 1440 / 60)}h`
+        : minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
+      marker.textContent = `↯ ${duration} skipped`;
+      marker.title = `${new Date(segment.newer).toLocaleString()} → ${new Date(segment.older).toLocaleString()}\nNo recorded messages or inferred activity`;
+      fragment.append(place(marker, timelineScroll.scrollLeft, segment.top, 128, 44));
+      const rule = document.createElement('div');
+      rule.className = 'timeline-gap-rule';
+      fragment.append(place(rule, 128, segment.top + 22, totalWidth - 128));
+      lastLabel = segment.bottom;
+      continue;
+    }
+    const first = Math.min(segment.newer, timelineTime(top));
+    for (let time = Math.floor(first / step) * step; time >= segment.older && timelineY(time) <= bottom + 40; time -= step) {
+      label(time, timelineY(time));
+    }
   }
   timelineCanvas.replaceChildren(fragment);
   timelineStatus.textContent = `${timelineLanes.length} columns in view · ${timelineRows.length.toLocaleString()} prompts${timelineUntimed ? ` · ${timelineUntimed.toLocaleString()} without timestamps omitted` : ''}`;

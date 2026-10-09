@@ -509,6 +509,7 @@ a:hover { color: var(--text); }
 .timeline-prompt:hover, .timeline-prompt:focus-visible { background: var(--panel-hover); outline: 1px solid var(--accent); z-index: 3; }
 .timeline-prompt-time { color: var(--muted); font-size: 10px; margin-right: 8px; font-variant-numeric: tabular-nums; }
 .timeline-tick { position: absolute; border-top: 1px solid #ffffff08; padding: 2px 10px; color: var(--muted); font-size: 9px; pointer-events: none; }
-.timeline-gap { position: absolute; text-align: center; color: var(--muted); font-size: 10px; border-top: 1px dashed var(--border); pointer-events: none; }
+.timeline-gap { position: absolute; z-index: 4; display: flex; align-items: center; padding: 0 10px; color: var(--accent); background: var(--bg); font-size: 11px; font-weight: 600; border-block: 1px dashed var(--border); }
+.timeline-gap-rule { position: absolute; border-top: 1px dashed var(--border); pointer-events: none; }
 #timeline-probe { position: absolute; z-index: 6; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel-hover); color: var(--text); font-size: 11px; pointer-events: none; box-shadow: 0 3px 12px #0008; }
 .timeline-selected > .bubble { outline: 2px solid var(--accent); }
