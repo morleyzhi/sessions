@@ -14,6 +14,7 @@ let timelineLoaded = false;
 let timelineRequest = 0;
 let timelineFrame = null;
 let timelineUntimed = 0;
+let timelineProjects = new Map();
 
 const setMode = (mode) => {
   const timeline = mode === 'timeline';
@@ -71,6 +72,16 @@ const loadTimeline = async () => {
     if (request !== timelineRequest) return;
     const anchor = timelineLoaded && timelineScroll.scrollTop > 10 ? timelineTime(timelineScroll.scrollTop) : null;
     timelineRows = data.rows;
+    timelineProjects = new Map();
+    for (const row of timelineRows) {
+      if (!timelineProjects.has(row.lane)) timelineProjects.set(row.lane, { row, count: 0, sessions: new Map(), branches: new Set(), directories: new Set(), tools: new Set() });
+      const project = timelineProjects.get(row.lane);
+      project.count++;
+      project.sessions.set(row.key, row.sessionTitle || 'Untitled session');
+      if (row.branch) project.branches.add(row.branch);
+      if (row.cwd) project.directories.add(row.cwd);
+      project.tools.add(TOOL_NAMES[row.tool] || row.tool);
+    }
     timelineUntimed = data.untimed;
     timelineNow = Math.max(Date.now(), ...timelineRows.slice(0, 1).map((row) => row.end));
     buildTimeline();
@@ -93,6 +104,7 @@ const laneColor = (lane) => {
 
 const paintTimeline = () => {
   if (timelineView.hidden || !timelineLoaded) return;
+  probe.hidden = true;
   const top = timelineScroll.scrollTop;
   const bottom = top + timelineScroll.clientHeight - 50;
   const visible = timelineRows.filter((row) => row.y + 28 >= top && row.top <= bottom);
@@ -115,11 +127,12 @@ const paintTimeline = () => {
     const heading = document.createElement('div');
     heading.className = 'timeline-lane-head';
     heading.textContent = row.label;
-    heading.title = `${row.label}\n${row.lane}\n${row.kind}\n${row.cwd || 'No recorded directory'}`;
+    heading.dataset.lane = lane;
     heading.style.borderTopColor = laneColor(lane);
     timelineHead.append(place(heading, 128 + index * width, 0, width, 50));
     const column = document.createElement('div');
     column.className = 'timeline-column';
+    column.dataset.lane = lane;
     fragment.append(place(column, 128 + index * width, top, width, bottom - top + 50));
   });
   for (const row of visible) {
@@ -128,7 +141,7 @@ const paintTimeline = () => {
       const bar = document.createElement('div');
       bar.className = 'timeline-activity';
       bar.style.background = laneColor(row.lane);
-      bar.title = `Inferred activity: ${timelineClock(row.timestamp)}–${timelineClock(row.end)}`;
+      bar.dataset.lane = row.lane;
       const start = Math.max(top, row.top);
       fragment.append(place(bar, x + 5, start, width - 10, Math.min(bottom + 40, row.y + 25) - start));
     }
@@ -136,7 +149,9 @@ const paintTimeline = () => {
     const button = document.createElement('button');
     button.className = 'timeline-prompt';
     button.style.borderLeftColor = laneColor(row.lane);
-    button.title = `${new Date(row.timestamp).toLocaleString()} · ${TOOL_NAMES[row.tool]}\n${row.text}\nOpen this message`;
+    button.dataset.lane = row.lane;
+    button.dataset.prompt = row.text;
+    button.dataset.time = new Date(row.timestamp).toLocaleString();
     const time = document.createElement('span');
     time.className = 'timeline-prompt-time';
     time.textContent = timelineClock(row.timestamp);
@@ -178,7 +193,7 @@ const paintTimeline = () => {
       const duration = minutes >= 1440 ? `${Math.floor(minutes / 1440)}d ${Math.floor(minutes % 1440 / 60)}h`
         : minutes >= 60 ? `${Math.floor(minutes / 60)}h ${minutes % 60}m` : `${minutes}m`;
       marker.textContent = `↯ ${duration} skipped`;
-      marker.title = `${new Date(segment.newer).toLocaleString()} → ${new Date(segment.older).toLocaleString()}\nNo recorded messages or inferred activity`;
+      marker.title = `${new Date(segment.newer).toLocaleString()} → ${new Date(segment.older).toLocaleString()}\nNo messages recorded during this time`;
       fragment.append(place(marker, timelineScroll.scrollLeft, segment.top, 128, 44));
       const rule = document.createElement('div');
       rule.className = 'timeline-gap-rule';
@@ -206,16 +221,30 @@ new ResizeObserver(() => {
   else queueTimeline();
 }).observe(timelineScroll);
 const probe = document.getElementById('timeline-probe');
-timelineScroll.addEventListener('mousemove', (event) => {
-  if (!timelineLoaded || !timelineRows.length) return;
-  const y = event.clientY - timelineCanvas.getBoundingClientRect().top;
-  const time = timelineTime(y);
-  const active = new Set(timelineRows.filter((row) => row.timestamp <= time && row.end >= time).map((row) => row.lane));
-  probe.hidden = false;
-  probe.textContent = `${timelineDate(time)} ${timelineClock(time)} · ${active.size} inferred active`;
-  probe.style.top = `${event.clientY - timelineScroll.getBoundingClientRect().top + timelineScroll.scrollTop + 16}px`;
-  probe.style.left = `${timelineScroll.scrollLeft + 12}px`;
+const showProjectTooltip = (target, x, y) => {
+  const element = target.closest('[data-lane]');
+  const project = element && timelineProjects.get(element.dataset.lane);
+  probe.hidden = !project;
+  if (!project) return;
+  const { row, count, sessions, branches, directories, tools } = project;
+  const lines = [row.label];
+  if (row.lane.startsWith('https://')) lines.push(row.lane);
+  if (branches.size) lines.push(`Branch: ${[...branches].join(', ')}`);
+  lines.push(...directories);
+  lines.push(`${count} messages · ${sessions.size} ${sessions.size === 1 ? 'session' : 'sessions'} · ${[...tools].join(', ')}`);
+  lines.push(...[...sessions.values()].slice(0, 3).map((title) => `Session: ${title}`));
+  if (sessions.size > 3) lines.push(`+${sessions.size - 3} more sessions`);
+  if (element.dataset.prompt) lines.push('', element.dataset.time, element.dataset.prompt, 'Click to open this message');
+  probe.textContent = lines.join('\n');
+  probe.style.left = `${Math.max(8, Math.min(x + 16, window.innerWidth - probe.offsetWidth - 8))}px`;
+  probe.style.top = `${Math.max(8, Math.min(y + 16, window.innerHeight - probe.offsetHeight - 8))}px`;
+};
+timelineScroll.addEventListener('mousemove', (event) => showProjectTooltip(event.target, event.clientX, event.clientY));
+timelineScroll.addEventListener('focusin', (event) => {
+  const rect = event.target.getBoundingClientRect();
+  showProjectTooltip(event.target, rect.left, rect.bottom);
 });
+timelineScroll.addEventListener('focusout', () => { probe.hidden = true; });
 timelineScroll.addEventListener('mouseleave', () => { probe.hidden = true; });
 document.getElementById('timeline-now').onclick = () => { timelineScroll.scrollTop = 0; loadTimeline(); };
 document.getElementById('timeline-date').onchange = (event) => {

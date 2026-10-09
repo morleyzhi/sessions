@@ -166,7 +166,7 @@ ipcMain.handle('sessions:timeline', () => {
   return {
     rows: sessions.flatMap((session) => (session.timeline?.rows || []).map((row) => ({
       ...row, label: titles[row.lane] || row.label, prTitle: titles[row.lane] || '',
-      key: `${session.tool}:${session.id}`, tool: session.tool, filePath: session.filePath,
+      key: `${session.tool}:${session.id}`, sessionTitle: session.title, tool: session.tool, filePath: session.filePath,
     }))).sort((a, b) => b.timestamp - a.timestamp),
     untimed: sessions.reduce((sum, session) => sum + (session.timeline?.untimed || 0), 0),
   };
