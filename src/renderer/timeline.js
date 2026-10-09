@@ -4,6 +4,9 @@ const timelineCanvas = document.getElementById('timeline-canvas');
 const timelineHead = document.getElementById('timeline-head');
 const timelineStatus = document.getElementById('timeline-status');
 let timelineRows = [];
+let timelineAllRows = [];
+const excludeReviews = document.getElementById('timeline-exclude-reviews');
+try { excludeReviews.checked = localStorage.getItem('timeline-exclude-reviews') !== 'false'; } catch { /* Use the default when storage is unavailable. */ }
 const timelineZoom = document.getElementById('timeline-zoom');
 let timelineScale = 1;
 let timelineTimeScale = null;
@@ -35,6 +38,18 @@ const timelineY = (time) => timelineTimeScale ? timelineTimeScale.yAt(time) : 0;
 const timelineTime = (y) => timelineTimeScale ? timelineTimeScale.timeAt(y) : timelineNow;
 
 const buildTimeline = () => {
+  timelineRows = timelineAllRows.filter((row) => !excludeReviews.checked || !row.isReview);
+  timelineProjects = new Map();
+  for (const row of timelineRows) {
+    if (!timelineProjects.has(row.lane)) timelineProjects.set(row.lane, { row, count: 0, sessions: new Map(), branches: new Set(), directories: new Set(), tools: new Set() });
+    const project = timelineProjects.get(row.lane);
+    project.count++;
+    project.sessions.set(row.key, row.sessionTitle || 'Untitled session');
+    if (row.branch) project.branches.add(row.branch);
+    if (row.cwd) project.directories.add(row.cwd);
+    project.tools.add(TOOL_NAMES[row.tool] || row.tool);
+  }
+
   timelineHeight = Math.max(100, timelineScroll.clientHeight - 50);
   timelineScale = timelineHeight / (Number(timelineZoom.value) * 60000);
   timelineTimeScale = createTimeScale(timelineRows, timelineNow, timelineScale);
@@ -58,6 +73,10 @@ const resizeTimeline = () => {
   paintTimeline();
 };
 timelineZoom.onchange = resizeTimeline;
+excludeReviews.onchange = () => {
+  try { localStorage.setItem('timeline-exclude-reviews', String(excludeReviews.checked)); } catch { /* Keep the choice for this window. */ }
+  resizeTimeline();
+};
 window.sessions.onTimelineZoom((direction) => {
   if (timelineView.hidden) return;
   timelineZoom.selectedIndex = Math.max(0, Math.min(timelineZoom.options.length - 1, timelineZoom.selectedIndex + direction));
@@ -70,18 +89,8 @@ const loadTimeline = async () => {
     const data = await window.sessions.timeline();
     if (request !== timelineRequest) return;
     const anchor = timelineLoaded && timelineScroll.scrollTop > 10 ? timelineTime(timelineScroll.scrollTop) : null;
-    timelineRows = data.rows;
-    timelineProjects = new Map();
-    for (const row of timelineRows) {
-      if (!timelineProjects.has(row.lane)) timelineProjects.set(row.lane, { row, count: 0, sessions: new Map(), branches: new Set(), directories: new Set(), tools: new Set() });
-      const project = timelineProjects.get(row.lane);
-      project.count++;
-      project.sessions.set(row.key, row.sessionTitle || 'Untitled session');
-      if (row.branch) project.branches.add(row.branch);
-      if (row.cwd) project.directories.add(row.cwd);
-      project.tools.add(TOOL_NAMES[row.tool] || row.tool);
-    }
-    timelineNow = Math.max(Date.now(), ...timelineRows.slice(0, 1).map((row) => row.end));
+    timelineAllRows = data.rows;
+    timelineNow = Math.max(Date.now(), ...timelineAllRows.slice(0, 1).map((row) => row.end));
     buildTimeline();
     timelineLoaded = true;
     if (anchor !== null) timelineScroll.scrollTop = timelineY(anchor);
@@ -181,7 +190,7 @@ const paintTimeline = () => {
     tick.textContent = `${timelineDate(time)} · ${timelineClock(time)}`;
     fragment.append(place(tick, 0, y, totalWidth));
   };
-  const tickMinutes = Number(timelineZoom.value) <= 30 ? 5 : Number(timelineZoom.value) <= 120 ? 10 : 30;
+  const tickMinutes = [5, 10, 15, 30, 60, 120, 180, 360].find((minutes) => minutes >= Number(timelineZoom.value) / 8);
   const step = tickMinutes * 60000;
   for (const segment of timelineTimeScale.segments) {
     if (segment.bottom < top || segment.top > bottom + 40) continue;
@@ -208,7 +217,7 @@ const paintTimeline = () => {
   timelineCanvas.replaceChildren(fragment);
   timelineStatus.hidden = true;
   timelineStatus.textContent = '';
-  if (!timelineRows.length) timelineCanvas.textContent = 'No timestamped prompts yet. The timeline updates when indexing finishes.';
+  if (!timelineRows.length) timelineCanvas.textContent = timelineAllRows.length ? 'No messages to show with reviews excluded.' : 'No timestamped prompts yet. The timeline updates when indexing finishes.';
 };
 
 const queueTimeline = () => {

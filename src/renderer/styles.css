@@ -512,3 +512,7 @@ a:hover { color: var(--text); }
 .timeline-gap-rule { position: absolute; border-top: 1px dashed var(--border); pointer-events: none; }
 #timeline-probe { position: fixed; white-space: pre-line; overflow-wrap: anywhere; max-width: min(440px, calc(100vw - 16px)); max-height: calc(100vh - 16px); overflow: hidden; line-height: 1.6; z-index: 6; padding: 4px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--panel-hover); color: var(--text); font-size: 11px; pointer-events: none; box-shadow: 0 3px 12px #0008; }
 .timeline-selected > .bubble { outline: 2px solid var(--accent); }
+
+.timeline-review-filter { display: flex; align-items: center; gap: 5px; white-space: nowrap; }
+.timeline-review-filter input { accent-color: var(--accent); }
+.timeline-controls { flex-wrap: wrap; justify-content: flex-end; }

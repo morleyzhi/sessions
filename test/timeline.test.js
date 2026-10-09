@@ -93,3 +93,24 @@ test('A PR number alone does not guess between repositories', () => {
   collectPRTitles('{"number":12,"title":"Show work by hour"}', titles);
   assert.deepEqual(resolvePRTitles(titles), {});
 });
+
+const { isReviewSession } = require('../src/indexers/timeline');
+test('Review requests hide their follow-up messages', () => {
+  assert.equal(isReviewSession({ title: 'PR 123', timeline: { rows: [{ text: 'In a worktree, review this PR for correctness' }, { text: 'LGTM, approve it' }] } }), true);
+});
+
+test('A review title identifies a session opened with a PR link', () => {
+  assert.equal(isReviewSession({ title: 'Review PR 123', preview: 'https://github.com/example/repo/pull/123' }), true);
+});
+
+test('Addressing review comments stays visible', () => {
+  assert.equal(isReviewSession({ title: 'Review comments', preview: 'Address the review comments on this PR' }), false);
+});
+
+test('Implementation stays visible when it asks for a final review', () => {
+  assert.equal(isReviewSession({ title: 'Build timeline', preview: 'Implement this feature then review it' }), false);
+});
+
+test('Ordinary project work stays visible', () => {
+  assert.equal(isReviewSession({ title: 'Timeline', preview: 'Zoom out to one hour per screen' }), false);
+});

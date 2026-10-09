@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { app, BrowserWindow, Menu, ipcMain, clipboard, shell } = require('electron');
 const { buildIndex, loadSession, resumeCommandFor } = require('./indexers');
+const { isReviewSession } = require('./indexers/timeline');
 const { liveSessionKeys } = require('./live');
 
 let mainWindow = null;
@@ -164,10 +165,14 @@ ipcMain.on('timeline:mode', (event, enabled) => { event.sender.timelineMode = Bo
 ipcMain.handle('sessions:timeline', () => {
   const titles = Object.assign({}, ...sessions.slice().reverse().map((session) => session.prTitles));
   return {
-    rows: sessions.flatMap((session) => (session.timeline?.rows || []).map((row) => ({
-      ...row, label: titles[row.lane] || row.label, prTitle: titles[row.lane] || '',
-      key: `${session.tool}:${session.id}`, sessionTitle: session.title, tool: session.tool, filePath: session.filePath,
-    }))).sort((a, b) => b.timestamp - a.timestamp),
+    rows: sessions.flatMap((session) => {
+      const isReview = isReviewSession(session);
+      return (session.timeline?.rows || []).map((row) => ({
+        isReview,
+        ...row, label: titles[row.lane] || row.label, prTitle: titles[row.lane] || '',
+        key: `${session.tool}:${session.id}`, sessionTitle: session.title, tool: session.tool, filePath: session.filePath,
+      }));
+    }).sort((a, b) => b.timestamp - a.timestamp),
     untimed: sessions.reduce((sum, session) => sum + (session.timeline?.untimed || 0), 0),
   };
 });

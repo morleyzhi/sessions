@@ -54,4 +54,17 @@ const timelineFor = (session) => {
   return { rows, untimed };
 };
 
-module.exports = { timelineFor };
+// Follow-up messages stay with the task that starts the session.
+const isReviewSession = (session) => {
+  const prompt = (session.timeline?.rows?.[0]?.text || session.preview || '').trim();
+  const opening = prompt.slice(0, 400).replace(/https?:\/\/\S+/g, '');
+  const review = /\b(?:re[ -]?)?review\b/i;
+  const change = /\b(?:implement|fix|resolve|address|build|create|add|remove|update|change)\b/i;
+  const reviewAt = opening.search(review);
+  const changeAt = opening.search(change);
+  if (changeAt !== -1 && (reviewAt === -1 || changeAt < reviewAt)) return false;
+  if (reviewAt !== -1) return true;
+  return review.test(session.title || '');
+};
+
+module.exports = { timelineFor, isReviewSession };
