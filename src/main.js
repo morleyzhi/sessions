@@ -51,7 +51,7 @@ const createWindow = () => {
 };
 
 const summarize = (session) => {
-  const { searchText, ...summary } = session;
+  const { searchText, timeline, ...summary } = session;
   return summary;
 };
 
@@ -67,7 +67,7 @@ const refresh = async ({ quiet = false } = {}) => {
 
 // What the window is currently showing, so a poll that changed nothing is silent.
 const signatureOf = (summaries) =>
-  summaries.map((summary) => `${summary.tool}:${summary.id}:${summary.updatedAt}`).join(',');
+  summaries.map((summary) => `${summary.tool}:${summary.id}:${summary.fingerprint}`).join(',');
 
 let signature = '';
 let polling = false;
@@ -151,6 +151,13 @@ ipcMain.handle('sessions:search', (event, query) => {
       return { ...summarize(session), snippet: snippetFor(session, terms) };
     });
 });
+
+ipcMain.handle('sessions:timeline', () => ({
+  rows: sessions.flatMap((session) => (session.timeline?.rows || []).map((row) => ({
+    ...row, key: `${session.tool}:${session.id}`, tool: session.tool, filePath: session.filePath,
+  }))).sort((a, b) => b.timestamp - a.timestamp),
+  untimed: sessions.reduce((sum, session) => sum + (session.timeline?.untimed || 0), 0),
+}));
 
 ipcMain.handle('sessions:open', (event, { tool, filePath }) => loadSession({ tool, filePath }));
 

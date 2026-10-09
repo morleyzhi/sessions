@@ -3,6 +3,7 @@ const path = require('path');
 const claude = require('./claude');
 const codex = require('./codex');
 const cursor = require('./cursor');
+const { timelineFor } = require('./timeline');
 
 const INDEXERS = { claude, codex, cursor };
 
@@ -29,6 +30,7 @@ const toSummary = (session, fingerprint) => ({
   searchText: session.searchText,
   resumeCommand: INDEXERS[session.tool].resumeCommand(session),
   fingerprint,
+  timeline: timelineFor(session),
 });
 
 const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
@@ -54,7 +56,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
     let fingerprint;
     try {
       const { mtimeMs, size } = statTarget(target);
-      fingerprint = `v3:${mtimeMs}:${size}`;
+      fingerprint = `v4:${mtimeMs}:${size}`;
     } catch {
       continue;
     }

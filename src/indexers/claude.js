@@ -67,6 +67,8 @@ const parseFile = async (filePath) => {
     if (!text || isNoise(text)) continue;
     messages.push({
       role: event.type,
+      cwd: event.cwd || cwd,
+      branch: event.gitBranch || '',
       text,
       timestamp: event.timestamp ? Date.parse(event.timestamp) : null,
       isSidechain: Boolean(event.isSidechain),

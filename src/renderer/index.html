@@ -7,8 +7,13 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
-    <header class="titlebar"></header>
-    <main>
+    <header class="titlebar">
+      <nav class="mode-tabs" aria-label="View">
+        <button id="sessions-tab" aria-pressed="true">Sessions</button>
+        <button id="timeline-tab" aria-pressed="false">Timeline</button>
+      </nav>
+    </header>
+    <main id="sessions-view">
       <aside class="sidebar">
         <div class="search">
           <input id="query" type="search" placeholder="Search sessions" autofocus spellcheck="false" />
@@ -26,6 +31,22 @@
         <div class="empty">Select a session</div>
       </section>
     </main>
+    <section id="timeline-view" hidden aria-label="Work timeline">
+      <div class="timeline-toolbar">
+        <div><strong>Work timeline</strong><span id="timeline-status">Loading…</span></div>
+        <div class="timeline-controls">
+          <label>Jump to <input id="timeline-date" type="date" /></label>
+          <button id="timeline-now">Now ↑</button>
+        </div>
+      </div>
+      <div class="timeline-note">Newest first · Exact prompt times · Shading infers activity through the last reply (silences over 30m excluded) · PR labels come from agent mentions</div>
+      <div id="timeline-scroll" tabindex="0" aria-label="Scroll backward through your work">
+        <div id="timeline-head"></div>
+        <div id="timeline-canvas"></div>
+        <div id="timeline-probe" hidden></div>
+      </div>
+    </section>
     <script src="renderer.js"></script>
+    <script src="timeline.js"></script>
   </body>
 </html>

@@ -54,6 +54,9 @@ const parseFile = async (filePath, titles = new Map()) => {
   const messages = [];
   let id = '';
   let cwd = '';
+  let branch = '';
+  let messageCwd = '';
+  let isSidechain = false;
   let startedAt = null;
   let updatedAt = null;
 
@@ -73,10 +76,14 @@ const parseFile = async (filePath, titles = new Map()) => {
       }
     }
     if (event.type === 'session_meta') {
-      id = event.payload?.session_id || event.payload?.id || '';
+      id = event.payload?.id || event.payload?.session_id || '';
+      isSidechain = Boolean(event.payload?.source?.subagent || event.payload?.source === 'subagent');
       cwd = event.payload?.cwd || '';
+      messageCwd = cwd;
+      branch = event.payload?.git?.branch || '';
       continue;
     }
+    if (event.type === 'turn_context') messageCwd = event.payload?.cwd || messageCwd;
     if (event.type !== 'response_item') continue;
     const payload = event.payload || {};
     if (payload.type === 'function_call') {
@@ -87,7 +94,7 @@ const parseFile = async (filePath, titles = new Map()) => {
         // Codex writes the arguments as a JSON string; a malformed one is used as-is.
       }
       const text = toolMarker(payload.name || 'unknown', input);
-      messages.push({ role: 'assistant', text, timestamp: null, toolCalls: toolCalls(text) });
+      messages.push({ role: 'assistant', text, timestamp: event.timestamp ? Date.parse(event.timestamp) : null, toolCalls: toolCalls(text) });
       continue;
     }
     if (payload.type !== 'message') continue;
@@ -96,6 +103,9 @@ const parseFile = async (filePath, titles = new Map()) => {
     if (!text || isInjectedContext(text)) continue;
     messages.push({
       role: payload.role,
+      isSidechain,
+      cwd: messageCwd,
+      branch,
       text,
       timestamp: event.timestamp ? Date.parse(event.timestamp) : null,
       toolCalls: isToolOnly(text) ? toolCalls(text) : null,

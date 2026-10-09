@@ -280,14 +280,14 @@ const render = () => {
 // Consecutive assistant messages and their tools share one fold control.
 const groupTurns = (messages) => {
   const groups = [];
-  for (const message of messages) {
+  for (const [messageIndex, message] of messages.entries()) {
     if (message.toolCalls && !message.toolCalls.length) continue;
     const role = message.toolCalls ? 'assistant' : message.role;
     const last = groups[groups.length - 1];
     if (role === 'assistant' && last?.role === role && last.isSidechain === message.isSidechain) {
       last.messages.push(message);
     } else {
-      groups.push({ role, timestamp: message.timestamp, isSidechain: message.isSidechain, messages: [message] });
+      groups.push({ messageIndex, role, timestamp: message.timestamp, isSidechain: message.isSidechain, messages: [message] });
     }
   }
   return groups;
@@ -314,7 +314,7 @@ const renderTools = (group) => {
   </details>`;
 };
 
-const renderMessage = (turn) => `<details open class="message ${escapeHtml(turn.role)} ${turn.isSidechain ? 'sidechain' : ''}">
+const renderMessage = (turn) => `<details open data-message-index="${turn.messageIndex}" class="message ${escapeHtml(turn.role)} ${turn.isSidechain ? 'sidechain' : ''}">
   <summary class="role" title="Fold or unfold this turn">
     <span class="turn-caret">▸</span>
     <span>${escapeHtml(turn.role)}${turn.isSidechain ? ' · subagent' : ''}</span>
@@ -512,10 +512,10 @@ const setPins = (keys) => {
   render();
 };
 
-const select = async (key) => {
+const select = async (key, targetSummary = null) => {
   // Clicking the row already shown in the detail pane does nothing.
-  if (key === detailKey) return;
-  const summary = visibleSessions.find((session) => keyOf(session) === key);
+  if (key === detailKey && !targetSummary) return;
+  const summary = targetSummary || visibleSessions.find((session) => keyOf(session) === key);
   if (!summary) return;
   selectedKey = key;
   render();
@@ -618,4 +618,5 @@ window.sessions.pins().then((keys) => {
 window.sessions.list().then((sessions) => {
   allSessions = sessions;
   render();
+  document.dispatchEvent(new Event('sessions-loaded'));
 });
