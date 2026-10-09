@@ -13,7 +13,6 @@ let timelineNow = Date.now();
 let timelineLoaded = false;
 let timelineRequest = 0;
 let timelineFrame = null;
-let timelineUntimed = 0;
 let timelineProjects = new Map();
 
 const setMode = (mode) => {
@@ -82,13 +81,13 @@ const loadTimeline = async () => {
       if (row.cwd) project.directories.add(row.cwd);
       project.tools.add(TOOL_NAMES[row.tool] || row.tool);
     }
-    timelineUntimed = data.untimed;
     timelineNow = Math.max(Date.now(), ...timelineRows.slice(0, 1).map((row) => row.end));
     buildTimeline();
     timelineLoaded = true;
     if (anchor !== null) timelineScroll.scrollTop = timelineY(anchor);
     paintTimeline();
   } catch {
+    timelineStatus.hidden = false;
     timelineStatus.textContent = 'Unable to load timeline. Switch tabs to retry.';
     timelineLoaded = false;
   }
@@ -140,7 +139,7 @@ const paintTimeline = () => {
     if (row.end > row.timestamp) {
       const bar = document.createElement('div');
       bar.className = 'timeline-activity';
-      bar.style.background = laneColor(row.lane);
+      bar.style.setProperty('--activity-color', laneColor(row.lane));
       bar.dataset.lane = row.lane;
       const start = Math.max(top, row.top);
       fragment.append(place(bar, x + 5, start, width - 10, Math.min(bottom + 40, row.y + 25) - start));
@@ -207,7 +206,8 @@ const paintTimeline = () => {
     }
   }
   timelineCanvas.replaceChildren(fragment);
-  timelineStatus.textContent = `${timelineLanes.length} columns in view · ${timelineRows.length.toLocaleString()} prompts${timelineUntimed ? ` · ${timelineUntimed.toLocaleString()} without timestamps omitted` : ''}`;
+  timelineStatus.hidden = true;
+  timelineStatus.textContent = '';
   if (!timelineRows.length) timelineCanvas.textContent = 'No timestamped prompts yet. The timeline updates when indexing finishes.';
 };
 

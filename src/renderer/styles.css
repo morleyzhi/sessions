@@ -497,14 +497,13 @@ a:hover { color: var(--text); }
 .timeline-controls { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 12px; }
 .timeline-controls button, .timeline-controls input, .timeline-controls select { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 9px; color-scheme: dark; }
 .timeline-controls button { cursor: pointer; }
-.timeline-note { padding: 0 20px 12px; font-size: 11px; color: var(--muted); }
 #timeline-scroll { flex: 1; overflow: auto; position: relative; border-top: 1px solid var(--border); }
 #timeline-head { position: sticky; top: 0; height: 50px; z-index: 5; background: var(--bg); }
 .timeline-axis-head { padding: 16px 12px; color: var(--muted); font-size: 10px; letter-spacing: 1px; }
 .timeline-lane-head { position: absolute; padding: 13px 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; border: 1px solid var(--border); border-top-width: 3px; background: var(--panel); font-size: 12px; }
 #timeline-canvas { position: relative; min-height: 200px; }
 .timeline-column { position: absolute; border-left: 1px solid var(--border); }
-.timeline-activity { position: absolute; opacity: .10; border-radius: 4px; }
+.timeline-activity { position: absolute; background: color-mix(in srgb, var(--activity-color) 10%, var(--bg)); border-radius: 4px; }
 .timeline-prompt { position: absolute; z-index: 2; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid var(--border); border-left: 3px solid; border-radius: 4px; padding: 3px 7px; background: var(--panel); color: var(--text); font: 12px/17px -apple-system, BlinkMacSystemFont, sans-serif; cursor: pointer; }
 .timeline-prompt:hover, .timeline-prompt:focus-visible { background: var(--panel-hover); outline: 1px solid var(--accent); z-index: 3; }
 .timeline-prompt-time { color: var(--muted); font-size: 10px; margin-right: 8px; font-variant-numeric: tabular-nums; }
