@@ -35,6 +35,13 @@
       <div class="timeline-toolbar">
         <div><strong>Work timeline</strong><span id="timeline-status">Loading…</span></div>
         <div class="timeline-controls">
+          <label>Zoom <select id="timeline-zoom" title="Cmd+plus to zoom in; Cmd+minus to zoom out">
+            <option value="15">15 min / screen</option>
+            <option value="30">30 min / screen</option>
+            <option value="60" selected>1 hour / screen</option>
+            <option value="120">2 hours / screen</option>
+            <option value="240">4 hours / screen</option>
+          </select></label>
           <label>Jump to <input id="timeline-date" type="date" /></label>
           <button id="timeline-now">Now ↑</button>
         </div>

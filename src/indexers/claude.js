@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
+const { collectPRTitles, resolvePRTitles } = require('./pr-titles');
 const {
   extractContent,
   buildSearchText,
@@ -36,6 +37,7 @@ const isNoise = (text) =>
 const parseFile = async (filePath) => {
   const stream = readline.createInterface({ input: fs.createReadStream(filePath), crlfDelay: Infinity });
   const messages = [];
+  const prTitles = {};
   let aiTitle = '';
   let customTitle = '';
   let cwd = '';
@@ -54,6 +56,7 @@ const parseFile = async (filePath) => {
     if (event.type === 'ai-title' && event.aiTitle) aiTitle = event.aiTitle;
     // A name you typed with /rename outranks the one Claude wrote for you.
     if (event.type === 'custom-title' && event.customTitle) customTitle = event.customTitle;
+    if (line.includes('github.com/') || (line.includes('title') && line.includes('number'))) collectPRTitles(event, prTitles);
     if (event.timestamp) {
       const time = Date.parse(event.timestamp);
       if (!Number.isNaN(time)) {
@@ -90,6 +93,7 @@ const parseFile = async (filePath) => {
     preview: collapse(firstPrompt(main)),
     searchText: buildSearchText(main),
     messages,
+    prTitles: resolvePRTitles(prTitles),
   };
 };
 

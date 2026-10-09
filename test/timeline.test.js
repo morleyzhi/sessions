@@ -59,3 +59,37 @@ test('Codex approval sessions keep their own ID', async () => {
     fs.rmSync(directory, { recursive: true });
   }
 });
+
+const { collectPRTitles, resolvePRTitles } = require('../src/indexers/pr-titles');
+test('PR titles come from saved GitHub command output', () => {
+  const titles = {};
+  collectPRTitles({ payload: { output: 'Process exited with code 0\n{"title":"Show work by hour","url":"https://github.com/example/sessions/pull/12"}' } }, titles);
+  assert.equal(titles['https://github.com/example/sessions/pull/12'], 'Show work by hour');
+});
+
+test('Named PR links supply a local title', () => {
+  const titles = {};
+  collectPRTitles('[Show work by hour](https://github.com/example/sessions/pull/12)', titles);
+  assert.equal(titles['https://github.com/example/sessions/pull/12'], 'Show work by hour');
+});
+
+test('PR numbers are not treated as titles', () => {
+  const titles = {};
+  collectPRTitles('[PR #12](https://github.com/example/sessions/pull/12)', titles);
+  assert.deepEqual(resolvePRTitles(titles), {});
+});
+
+
+test('Saved titles with PR numbers use the session repository', () => {
+  const titles = {};
+  collectPRTitles('Review https://github.com/example/sessions/pull/12', titles);
+  collectPRTitles('{"number":12,"title":"Show work by hour"}', titles);
+  assert.equal(resolvePRTitles(titles)['https://github.com/example/sessions/pull/12'], 'Show work by hour');
+});
+
+test('A PR number alone does not guess between repositories', () => {
+  const titles = {};
+  collectPRTitles('https://github.com/example/a/pull/12 https://github.com/example/b/pull/12', titles);
+  collectPRTitles('{"number":12,"title":"Show work by hour"}', titles);
+  assert.deepEqual(resolvePRTitles(titles), {});
+});

@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const readline = require('readline');
+const { collectPRTitles, resolvePRTitles } = require('./pr-titles');
 const {
   extractContent,
   buildSearchText,
@@ -52,6 +53,7 @@ const isInjectedContext = (text) =>
 const parseFile = async (filePath, titles = new Map()) => {
   const stream = readline.createInterface({ input: fs.createReadStream(filePath), crlfDelay: Infinity });
   const messages = [];
+  const prTitles = {};
   let id = '';
   let cwd = '';
   let branch = '';
@@ -68,6 +70,7 @@ const parseFile = async (filePath, titles = new Map()) => {
     } catch {
       continue;
     }
+    if (line.includes('github.com/') || (line.includes('title') && line.includes('number'))) collectPRTitles(event, prTitles);
     if (event.timestamp) {
       const time = Date.parse(event.timestamp);
       if (!Number.isNaN(time)) {
@@ -126,6 +129,7 @@ const parseFile = async (filePath, titles = new Map()) => {
     preview: collapse(firstPrompt(messages)),
     searchText: buildSearchText(messages),
     messages,
+    prTitles: resolvePRTitles(prTitles),
   };
 };
 

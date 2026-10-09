@@ -31,6 +31,7 @@ const toSummary = (session, fingerprint) => ({
   resumeCommand: INDEXERS[session.tool].resumeCommand(session),
   fingerprint,
   timeline: timelineFor(session),
+  prTitles: session.prTitles || {},
 });
 
 const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
@@ -56,7 +57,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
     let fingerprint;
     try {
       const { mtimeMs, size } = statTarget(target);
-      fingerprint = `v4:${mtimeMs}:${size}`;
+      fingerprint = `v5:${mtimeMs}:${size}`;
     } catch {
       continue;
     }

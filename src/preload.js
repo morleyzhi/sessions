@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('sessions', {
+  timelineMode: (enabled) => ipcRenderer.send('timeline:mode', enabled),
+  onTimelineZoom: (handler) => ipcRenderer.on('timeline:zoom', (event, direction) => handler(direction)),
   timeline: () => ipcRenderer.invoke('sessions:timeline'),
   list: () => ipcRenderer.invoke('sessions:list'),
   search: (query) => ipcRenderer.invoke('sessions:search', query),

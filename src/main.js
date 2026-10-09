@@ -47,11 +47,18 @@ const createWindow = () => {
       sandbox: false,
     },
   });
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (!mainWindow.webContents.timelineMode || input.type !== 'keyDown' || !(input.meta || input.control) || input.alt) return;
+    const direction = ['+', '='].includes(input.key) ? -1 : input.key === '-' ? 1 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    mainWindow.webContents.send('timeline:zoom', direction);
+  });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
 };
 
 const summarize = (session) => {
-  const { searchText, timeline, ...summary } = session;
+  const { searchText, timeline, prTitles, ...summary } = session;
   return summary;
 };
 
@@ -152,12 +159,18 @@ ipcMain.handle('sessions:search', (event, query) => {
     });
 });
 
-ipcMain.handle('sessions:timeline', () => ({
-  rows: sessions.flatMap((session) => (session.timeline?.rows || []).map((row) => ({
-    ...row, key: `${session.tool}:${session.id}`, tool: session.tool, filePath: session.filePath,
-  }))).sort((a, b) => b.timestamp - a.timestamp),
-  untimed: sessions.reduce((sum, session) => sum + (session.timeline?.untimed || 0), 0),
-}));
+ipcMain.on('timeline:mode', (event, enabled) => { event.sender.timelineMode = Boolean(enabled); });
+
+ipcMain.handle('sessions:timeline', () => {
+  const titles = Object.assign({}, ...sessions.slice().reverse().map((session) => session.prTitles));
+  return {
+    rows: sessions.flatMap((session) => (session.timeline?.rows || []).map((row) => ({
+      ...row, label: titles[row.lane] || row.label, prTitle: titles[row.lane] || '',
+      key: `${session.tool}:${session.id}`, tool: session.tool, filePath: session.filePath,
+    }))).sort((a, b) => b.timestamp - a.timestamp),
+    untimed: sessions.reduce((sum, session) => sum + (session.timeline?.untimed || 0), 0),
+  };
+});
 
 ipcMain.handle('sessions:open', (event, { tool, filePath }) => loadSession({ tool, filePath }));
 

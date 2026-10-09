@@ -4,8 +4,9 @@ const timelineCanvas = document.getElementById('timeline-canvas');
 const timelineHead = document.getElementById('timeline-head');
 const timelineStatus = document.getElementById('timeline-status');
 let timelineRows = [];
-let timelinePoints = [];
-let timelineGaps = [];
+const timelineZoom = document.getElementById('timeline-zoom');
+let timelineScale = 1;
+let timelineHeight = 0;
 let timelineLanes = [];
 let timelineNow = Date.now();
 let timelineLoaded = false;
@@ -15,79 +16,51 @@ let timelineUntimed = 0;
 
 const setMode = (mode) => {
   const timeline = mode === 'timeline';
+  window.sessions.timelineMode(timeline);
   document.getElementById('sessions-view').hidden = timeline;
   timelineView.hidden = !timeline;
   document.getElementById('sessions-tab').setAttribute('aria-pressed', String(!timeline));
   document.getElementById('timeline-tab').setAttribute('aria-pressed', String(timeline));
   if (timeline) {
     if (!timelineLoaded) loadTimeline();
-    else paintTimeline();
+    else resizeTimeline();
   }
 };
 
 document.getElementById('sessions-tab').onclick = () => setMode('sessions');
 document.getElementById('timeline-tab').onclick = () => setMode('timeline');
 
-// Locate the two recorded times surrounding a scroll position or timestamp.
-const timelineIndex = (value, field, descending = false) => {
-  let low = 0;
-  let high = timelinePoints.length - 1;
-  while (low < high) {
-    const middle = Math.ceil((low + high) / 2);
-    if (descending ? timelinePoints[middle][field] >= value : timelinePoints[middle][field] <= value) low = middle;
-    else high = middle - 1;
-  }
-  return low;
-};
-
-const timelineY = (time) => {
-  if (!timelinePoints.length) return 0;
-  const index = timelineIndex(time, 'time', true);
-  const point = timelinePoints[index];
-  const next = timelinePoints[index + 1];
-  return next ? point.y + (point.time - time) / (point.time - next.time) * (next.y - point.y) : point.y;
-};
-
-const timelineTime = (y) => {
-  if (!timelinePoints.length) return timelineNow;
-  const index = timelineIndex(y, 'y');
-  const point = timelinePoints[index];
-  const next = timelinePoints[index + 1];
-  return next ? point.time - (y - point.y) / (next.y - point.y) * (point.time - next.time) : point.time;
-};
+const timelineY = (time) => Math.max(0, (timelineNow - time) * timelineScale);
+const timelineTime = (y) => timelineNow - y / timelineScale;
 
 const buildTimeline = () => {
-  const times = new Set([timelineNow]);
-  const counts = new Map();
+  timelineHeight = Math.max(100, timelineScroll.clientHeight - 50);
+  timelineScale = timelineHeight / (Number(timelineZoom.value) * 60000);
+  const previous = new Map();
+  let bottom = timelineHeight;
   for (const row of timelineRows) {
-    times.add(row.timestamp);
-    times.add(row.end);
-    const key = `${row.timestamp}:${row.lane}`;
-    row.offset = (counts.get(key) || 0) * 28;
-    counts.set(key, row.offset / 28 + 1);
-  }
-  const heights = new Map();
-  for (const row of timelineRows) heights.set(row.timestamp, Math.max(heights.get(row.timestamp) || 0, row.offset + 28));
-  const sorted = [...times].sort((a, b) => b - a);
-  timelineGaps = [];
-  timelinePoints = [];
-  let y = 16;
-  sorted.forEach((time, index) => {
-    if (index) {
-      const previous = sorted[index - 1];
-      const delta = previous - time;
-      const height = Math.max(heights.get(previous) || 28, delta > 10 * 60000 ? 76 : delta / 60000 * 64);
-      if (delta > 10 * 60000) timelineGaps.push({ y: y + height / 2, duration: delta });
-      y += height;
-    }
-    timelinePoints.push({ time, y });
-  });
-  for (const row of timelineRows) {
-    row.y = timelineY(row.timestamp) + row.offset;
+    // Keep dense prompts readable; their printed timestamps retain the exact time.
+    row.y = Math.max(timelineY(row.timestamp), previous.get(row.lane) || 0);
+    previous.set(row.lane, row.y + 26);
     row.top = timelineY(row.end);
+    bottom = Math.max(bottom, row.y + 100);
   }
-  timelineCanvas.style.height = `${y + 100}px`;
+  timelineCanvas.style.height = `${bottom}px`;
 };
+
+const resizeTimeline = () => {
+  if (!timelineLoaded || timelineView.hidden) return;
+  const anchor = timelineTime(timelineScroll.scrollTop);
+  buildTimeline();
+  timelineScroll.scrollTop = timelineY(anchor);
+  paintTimeline();
+};
+timelineZoom.onchange = resizeTimeline;
+window.sessions.onTimelineZoom((direction) => {
+  if (timelineView.hidden) return;
+  timelineZoom.selectedIndex = Math.max(0, Math.min(timelineZoom.options.length - 1, timelineZoom.selectedIndex + direction));
+  resizeTimeline();
+});
 
 const loadTimeline = async () => {
   const request = ++timelineRequest;
@@ -140,7 +113,7 @@ const paintTimeline = () => {
     const heading = document.createElement('div');
     heading.className = 'timeline-lane-head';
     heading.textContent = row.label;
-    heading.title = `${row.kind}\n${row.cwd || 'No recorded directory'}`;
+    heading.title = `${row.label}\n${row.lane}\n${row.kind}\n${row.cwd || 'No recorded directory'}`;
     heading.style.borderTopColor = laneColor(lane);
     timelineHead.append(place(heading, 128 + index * width, 0, width, 50));
     const column = document.createElement('div');
@@ -192,22 +165,10 @@ const paintTimeline = () => {
     tick.textContent = `${timelineDate(time)} · ${timelineClock(time)}`;
     fragment.append(place(tick, 0, y, totalWidth));
   };
-  for (let index = timelineIndex(Math.max(0, top - 64), 'y'); index < timelinePoints.length; index++) {
-    const point = timelinePoints[index];
-    const next = timelinePoints[index + 1];
-    if (point.y > bottom + 40) break;
-    label(point.time, point.y);
-    if (next && point.time - next.time <= 10 * 60000) {
-      for (let time = Math.floor(point.time / 60000) * 60000; time > next.time; time -= 60000) label(time, timelineY(time));
-    }
-  }
-  for (const gap of timelineGaps) {
-    if (gap.y < top || gap.y > bottom) continue;
-    const element = document.createElement('div');
-    element.className = 'timeline-gap';
-    const minutes = Math.round(gap.duration / 60000);
-    element.textContent = `${minutes >= 1440 ? `${(minutes / 1440).toFixed(1)}d` : minutes >= 60 ? `${(minutes / 60).toFixed(1)}h` : `${minutes}m`} between recorded events`;
-    fragment.append(place(element, 128, gap.y, totalWidth - 128, 24));
+  const tickMinutes = Number(timelineZoom.value) <= 30 ? 5 : Number(timelineZoom.value) <= 120 ? 10 : 30;
+  const step = tickMinutes * 60000;
+  for (let time = Math.floor(timelineTime(top) / step) * step; timelineY(time) <= bottom + 40; time -= step) {
+    label(time, timelineY(time));
   }
   timelineCanvas.replaceChildren(fragment);
   timelineStatus.textContent = `${timelineLanes.length} columns in view · ${timelineRows.length.toLocaleString()} prompts${timelineUntimed ? ` · ${timelineUntimed.toLocaleString()} without timestamps omitted` : ''}`;
@@ -219,7 +180,10 @@ const queueTimeline = () => {
   timelineFrame = requestAnimationFrame(() => { timelineFrame = null; paintTimeline(); });
 };
 timelineScroll.addEventListener('scroll', queueTimeline);
-new ResizeObserver(queueTimeline).observe(timelineScroll);
+new ResizeObserver(() => {
+  if (timelineScroll.clientHeight - 50 !== timelineHeight) resizeTimeline();
+  else queueTimeline();
+}).observe(timelineScroll);
 const probe = document.getElementById('timeline-probe');
 timelineScroll.addEventListener('mousemove', (event) => {
   if (!timelineLoaded || !timelineRows.length) return;

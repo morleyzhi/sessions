@@ -495,7 +495,7 @@ a:hover { color: var(--text); }
 .timeline-toolbar strong { font-size: 17px; }
 #timeline-status { display: block; color: var(--muted); font-size: 11px; margin-top: 3px; }
 .timeline-controls { display: flex; gap: 12px; align-items: center; color: var(--muted); font-size: 12px; }
-.timeline-controls button, .timeline-controls input { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 9px; color-scheme: dark; }
+.timeline-controls button, .timeline-controls input, .timeline-controls select { border: 1px solid var(--border); background: var(--panel); color: var(--text); border-radius: 6px; padding: 5px 9px; color-scheme: dark; }
 .timeline-controls button { cursor: pointer; }
 .timeline-note { padding: 0 20px 12px; font-size: 11px; color: var(--muted); }
 #timeline-scroll { flex: 1; overflow: auto; position: relative; border-top: 1px solid var(--border); }
