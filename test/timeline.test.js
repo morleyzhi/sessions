@@ -40,7 +40,7 @@ test('Subagent prompts do not appear as messages I sent', () => {
   assert.equal(rows.length, 1);
 });
 
-test('Codex approval sessions keep their own ID', async () => {
+test('Codex Guardian reviews are excluded from history', async () => {
   const fs = require('fs');
   const os = require('os');
   const path = require('path');
@@ -53,8 +53,7 @@ test('Codex approval sessions keep their own ID', async () => {
       { type: 'response_item', timestamp: new Date(start).toISOString(), payload: { type: 'message', role: 'user', content: 'Review this action' } },
     ].map(JSON.stringify).join('\n'));
     const session = await parseFile(file);
-    assert.equal(session.id, 'approval');
-    assert.equal(timelineFor(session).rows.length, 0);
+    assert.equal(session, null);
   } finally {
     fs.rmSync(directory, { recursive: true });
   }

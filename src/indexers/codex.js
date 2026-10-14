@@ -79,6 +79,10 @@ const parseFile = async (filePath, titles = new Map()) => {
       }
     }
     if (event.type === 'session_meta') {
+      if (event.payload?.source?.subagent?.other === 'guardian' || event.payload?.thread_source === 'guardian_review') {
+        stream.close();
+        return null;
+      }
       id = event.payload?.id || event.payload?.session_id || '';
       isSidechain = Boolean(event.payload?.source?.subagent || event.payload?.source === 'subagent');
       cwd = event.payload?.cwd || '';

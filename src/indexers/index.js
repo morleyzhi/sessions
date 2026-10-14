@@ -57,7 +57,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
     let fingerprint;
     try {
       const { mtimeMs, size } = statTarget(target);
-      fingerprint = `v5:${mtimeMs}:${size}`;
+      fingerprint = `v6:${mtimeMs}:${size}`;
     } catch {
       continue;
     }
@@ -74,7 +74,7 @@ const buildIndex = async ({ cachePath, onProgress = () => {} }) => {
       const session = tool === 'codex'
         ? await codex.parseFile(target, codexTitles)
         : await INDEXERS[tool].parseFile(target);
-      if (!session.messageCount) continue;
+      if (!session?.messageCount) continue;
       const summary = toSummary(session, fingerprint);
       nextCache[target] = summary;
       summaries.push(summary);
@@ -108,6 +108,7 @@ const loadSession = async ({ tool, filePath }) => {
   const session = tool === 'codex'
     ? await codex.parseFile(filePath, codex.readTitles())
     : await indexer.parseFile(filePath);
+  if (!session) return null;
   return { ...session, resumeCommand: indexer.resumeCommand(session) };
 };
 
