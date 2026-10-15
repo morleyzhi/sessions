@@ -1,79 +1,71 @@
 # Sessions
 
-A local desktop app that lists, searches, and displays your Claude Code, Codex CLI, and Cursor session history, and starts any session in iTerm2 by drag or by clipboard.
+A native macOS app for browsing, searching, and resuming Claude Code, Codex CLI, and Cursor sessions. Built with SwiftUI, AppKit, Foundation, and the system SQLite library. Requires macOS 14 or later.
 
-Everything runs on your machine. The app makes no network requests, has no auto-updater, and has one dependency: Electron.
+Transcripts stay on your machine. Sessions reads local files and makes no network requests. Links you click open in your default browser.
 
-## Install it
+## Install
 
-First time:
-
-```bash
-git clone https://github.com/morleyzhi/sessions.git && cd sessions && npm install && npm run install-app
-```
-
-After pulling:
+Install Xcode or the Xcode command line tools, then run:
 
 ```bash
-git pull && npm install && npm run install-app
+bash scripts/install-app.sh
 ```
 
-## What it does
+The script builds an optimized `dist/Sessions.app`, installs it in `/Applications`, and opens it. Node and npm are optional conveniences; `npm run install-app` runs the same installer. There are no package dependencies.
 
-1. **List** — every session across the three tools, newest first, with the project name, message count, and relative time. A colored dot marks the tool — orange Claude Code, green Codex, purple Cursor — and the same dot appears on each filter button.
-2. **Search** — substring match across titles, working directories, and message text. All terms must match. Results show a highlighted snippet.
-3. **View** — the full transcript, user and assistant turns, with Claude Code subagent messages dimmed.
-4. **Copy resume command** — puts the right command on your clipboard. Paste it into iTerm2 and press Enter.
-5. **Live sessions** — a row whose CLI is running right now gets a `live` tag, refreshed every five seconds. Claude Code, Codex, and Cursor all refuse to resume a session another process already has open, so the detail pane says so instead of handing you a command that fails.
-6. **Right-click a row** — a menu that copies the resume command, then the title, session id, working directory, or transcript path.
-7. **Drag a row into iTerm2** — drops the resume command at the prompt with a trailing newline, so the session starts on drop. Works with any terminal that accepts dropped text; iTerm2 may ask to confirm a multi-line paste the first time.
+To build without installing:
 
-The resume commands are:
+```bash
+bash scripts/build-native.sh
+open dist/Sessions.app
+```
 
-| Tool | Command |
-| --- | --- |
-| Claude Code | `cd <cwd> && claude --resume <id>` |
-| Codex | `cd <cwd> && codex resume <id>` |
-| Cursor | `cd <cwd> && cursor-agent --resume=<id>` |
+To run the native tests:
 
-## Where the data comes from
+```bash
+bash scripts/test-native.sh
+```
+
+## Features
+
+- Browse sessions by tool, project, and last conversation time; saved Claude and Codex names appear as session titles.
+- Search titles, working directories, and the first 40,000 UTF-16 code units of conversation text. Every term must match; double quotes keep a phrase together.
+- Read complete transcripts with selectable text, Markdown, code, tables, foldable turns, and tool summaries. Subagent messages appear dimmed.
+- Find text in an open transcript with ⌘F. Use ⌘⇧F to search all sessions.
+- Pin sessions to the top. Pins from the Electron app carry over automatically.
+- Copy resume commands or drag a session into a terminal to paste its command with a trailing newline.
+- Right-click sessions to copy their title, ID, working directory, command, or transcript path, or reveal their transcript in Finder.
+- See which sessions belong to a running CLI. The index and live indicators refresh every three seconds; disk reading and search run off the main thread.
+- Explore activity on a timeline grouped by project, branch, or PR. Zoom, jump to dates, exclude reviews, and click prompts to open their transcripts. Idle periods longer than 15 minutes collapse to labeled strips.
+
+## Local data
 
 | Tool | Location | Format |
 | --- | --- | --- |
-| Claude Code | `~/.claude/projects/<project>/<uuid>.jsonl` | One JSON event per line. Titles come from the `ai-title` event. |
-| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | One JSON event per line. Titles come from `~/.codex/session_index.jsonl`. |
-| Cursor | `~/.cursor/chats/<workspace>/<chat>/store.db` | SQLite. Titles and working directory come from the sibling `meta.json`. |
+| Claude | `~/.claude/projects/<project>/<uuid>.jsonl` | JSON events; custom titles take precedence over generated titles |
+| Codex | `~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl` | JSON events; titles from `~/.codex/session_index.jsonl` |
+| Cursor | `~/.cursor/chats/<workspace>/<chat>/store.db` | Read-only SQLite; metadata from the adjacent `meta.json` |
 
-All files are opened read-only. The Cursor database is read through `/usr/bin/sqlite3`
-with the `-readonly` flag, which keeps the app free of native modules.
+The cache and pins live in `~/Library/Application Support/sessions/`. The native app uses `native-index-v1.json` and leaves the previous app's cache intact.
 
-## Known limits
+Cursor messages are reconstructed from embedded JSON in protobuf blobs. Encrypted messages and attachments are not recovered. Cursor messages have no timestamps; Sessions preserves their database insertion order and omits them from the timeline. Sessions with no readable messages are omitted from the list.
 
-- **Cursor transcripts are reconstructed, not read directly.** Cursor stores each turn in a
-  content-addressed blob store where most blobs are protobuf, and some are encrypted with a
-  key in `meta.json`. `src/indexers/protobuf.js` walks the protobuf wire format and pulls out
-  the embedded JSON messages, which recovers the user and assistant turns but not tool calls
-  or attachments. Expect a Cursor transcript to be less complete than a Claude or Codex one.
-- **Cursor messages have no timestamps**, so they are ordered by insertion order, which
-  matches conversation order in practice but is not guaranteed.
-- Message text is capped at 40 KB per session for the search index. Long sessions are
-  searchable up to that point; the transcript view always shows everything.
-- Sessions with no readable messages are skipped rather than listed as empty.
-
-## Layout
+## Source
 
 ```
-src/
-  main.js              Electron main process, IPC handlers, clipboard
-  preload.js           contextBridge surface exposed to the renderer
-  indexers/
-    index.js           Builds and caches the combined index
-    claude.js          ~/.claude/projects reader
-    codex.js           ~/.codex/sessions reader
-    cursor.js          ~/.cursor/chats reader
-    protobuf.js        Minimal protobuf wire-format string scanner
-    text.js            Shared content extraction
-  renderer/            index.html, styles.css, renderer.js
+native/
+  App.swift             App lifecycle, session list, filters, menus
+  Models.swift          Session types, content extraction, timeline grouping and scale
+  Indexers.swift        Streaming Claude/Codex readers and read-only Cursor SQLite reader
+  Store.swift           Background indexing, cache, search, pins, live CLI detection
+  TranscriptView.swift  Native transcript, Markdown, find, fold and expand controls
+  TimelineView.swift    AppKit drawing view with visible activity rows
+scripts/
+  build-native.sh       Compile and sign the app bundle
+  install-app.sh        Install and launch the app
+  make-icon.swift       Draw the app icon
+  test-native.sh        Compile and run native tests
 ```
 
-The renderer has no build step and no framework, so what you read is what runs.
+The build invokes `swiftc` directly; there are no downloaded packages or generated Xcode projects. The previous Electron implementation in `src/` and its JavaScript tests remain as a reference; they are not included in the native app bundle.

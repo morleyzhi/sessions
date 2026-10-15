@@ -1,8 +1,12 @@
 # Working in this repo
 
-Sessions is an Electron app with no bundler and no build step: `src/main.js` (main
-process), `src/preload.js` (IPC bridge), `src/renderer/` (plain DOM, no framework),
-`src/indexers/` (one parser per tool), `src/live.js` (which sessions a running CLI owns).
+Sessions is a native macOS app built with SwiftUI and AppKit. `native/App.swift`
+contains the app lifecycle and session list, `native/Indexers.swift` reads local
+transcripts, `native/Store.swift` indexes and searches them off the main thread,
+and the transcript and timeline views live in their own Swift files. Build with
+`bash scripts/build-native.sh`; run tests with `bash scripts/test-native.sh`.
+There are no package dependencies. npm scripts wrap the shell scripts.
+The previous Electron source in `src/` remains as a reference and is not shipped.
 
 ## After each change
 
@@ -29,6 +33,7 @@ Work on `main` unless asked otherwise. A new branch is named `mz-<topic>`.
 
 ## Changing an indexer
 
-`src/indexers/index.js` caches each parsed transcript by `version:mtimeMs:size`. If a
-change alters what a parser returns for a file that has not changed on disk, bump the
-version prefix or the old values survive the reinstall.
+`native/Store.swift` caches parsed summaries by `native-v1:mtime:size`, including
+Cursor metadata and SQLite WAL changes. If a parser change alters a summary for
+an unchanged transcript, bump the fingerprint prefix to invalidate old summaries.
+Codex title changes are applied on every refresh without reparsing transcripts.
