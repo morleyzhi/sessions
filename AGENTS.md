@@ -1,10 +1,12 @@
 # Working in this repo
 
-Sessions is a native macOS app built with SwiftUI and AppKit. `native/App.swift`
-contains the app lifecycle and session list, `native/Indexers.swift` reads local
+Sessions is a native macOS app rendered with AppKit views and native drawing.
+`native/App.swift` contains the app lifecycle, `native/ContentView.swift` lays out
+the original interface, `native/Indexers.swift` reads local
 transcripts, `native/Store.swift` indexes and searches them off the main thread,
 and the transcript and timeline views live in their own Swift files. Build with
 `bash scripts/build-native.sh`; run tests with `bash scripts/test-native.sh`.
+Do not render the interface with HTML, CSS, or a web view.
 There are no package dependencies. npm scripts wrap the shell scripts.
 The previous Electron source in `src/` remains as a reference and is not shipped.
 

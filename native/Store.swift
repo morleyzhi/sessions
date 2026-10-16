@@ -143,8 +143,11 @@ final class SessionStore: ObservableObject {
     private var refreshing = false
     private var timer: Timer?
     private var filterRequest = 0
-    init() {
-        if let data = try? Data(contentsOf: dataDirectory.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode([String].self, from: data) { pins = saved }
+    private let directory: URL
+    init(automaticallyRefresh: Bool = true, directory: URL = dataDirectory) {
+        self.directory = directory
+        if let data = try? Data(contentsOf: directory.appendingPathComponent("pins.json")), let saved = try? JSONDecoder().decode([String].self, from: data) { pins = saved }
+        guard automaticallyRefresh else { return }
         refresh()
         timer = Timer.scheduledTimer(withTimeInterval: 3, repeats: true) { [weak self] _ in self?.refresh() }
     }
@@ -154,7 +157,7 @@ final class SessionStore: ObservableObject {
             guard let self else { return }
             let firstRefresh = self.index == nil
             if firstRefresh {
-                self.index = IndexStore()
+                self.index = IndexStore(directory: self.directory)
                 let cached = self.index!.cachedSessions()
                 DispatchQueue.main.async { if !cached.isEmpty { self.sessions = cached; self.filter() } }
             }
@@ -215,8 +218,8 @@ final class SessionStore: ObservableObject {
     func togglePin(_ key: String) {
         pins = pins.contains(key) ? pins.filter { $0 != key } : [key] + pins
         do {
-            try FileManager.default.createDirectory(at: dataDirectory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(pins).write(to: dataDirectory.appendingPathComponent("pins.json"), options: .atomic)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try JSONEncoder().encode(pins).write(to: directory.appendingPathComponent("pins.json"), options: .atomic)
         } catch { status = "Could not save pins: \(error.localizedDescription)" }
         filter()
     }

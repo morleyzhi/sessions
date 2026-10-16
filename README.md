@@ -1,6 +1,6 @@
 # Sessions
 
-A native macOS app for browsing, searching, and resuming Claude Code, Codex CLI, and Cursor sessions. Built with SwiftUI, AppKit, Foundation, and the system SQLite library. Requires macOS 14 or later.
+A native macOS app for browsing, searching, and resuming Claude Code, Codex CLI, and Cursor sessions. Rendered with AppKit views, native text layout, and custom drawing, using Foundation and the system SQLite library. The app does not use HTML, CSS, or a web view. Requires macOS 14 or later.
 
 Transcripts stay on your machine. Sessions reads local files and makes no network requests. Links you click open in your default browser.
 
@@ -32,10 +32,10 @@ bash scripts/test-native.sh
 - Browse sessions by tool, project, and last conversation time; saved Claude and Codex names appear as session titles.
 - Search titles, working directories, and the first 40,000 UTF-16 code units of conversation text. Every term must match; double quotes keep a phrase together.
 - Read complete transcripts with selectable text, Markdown, code, tables, foldable turns, and tool summaries. Subagent messages appear dimmed.
-- Find text in an open transcript with ⌘F. Use ⌘⇧F to search all sessions.
+- Find text in an open transcript with ⌘F. With no session open, ⌘F focuses session search.
 - Pin sessions to the top. Pins from the Electron app carry over automatically.
 - Copy resume commands or drag a session into a terminal to paste its command with a trailing newline.
-- Right-click sessions to copy their title, ID, working directory, command, or transcript path, or reveal their transcript in Finder.
+- Right-click sessions to copy their title, ID, working directory, command, or transcript path.
 - See which sessions belong to a running CLI. The index and live indicators refresh every three seconds; disk reading and search run off the main thread.
 - Explore activity on a timeline grouped by project, branch, or PR. Zoom, jump to dates, exclude reviews, and click prompts to open their transcripts. Idle periods longer than 15 minutes collapse to labeled strips.
 
@@ -55,7 +55,11 @@ Cursor messages are reconstructed from embedded JSON in protobuf blobs. Encrypte
 
 ```
 native/
-  App.swift             App lifecycle, session list, filters, menus
+  App.swift             App lifecycle, window, and menus
+  ContentView.swift     Original layout, tabs, filters, and pinned section
+  Appearance.swift      Colors, fonts, controls, and scrollbars
+  SessionList.swift     Session rows, context menus, and command dragging
+  Markdown.swift        Native text, code, tables, and links
   Models.swift          Session types, content extraction, timeline grouping and scale
   Indexers.swift        Streaming Claude/Codex readers and read-only Cursor SQLite reader
   Store.swift           Background indexing, cache, search, pins, live CLI detection

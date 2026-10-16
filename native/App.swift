@@ -1,126 +1,91 @@
-import SwiftUI
 import AppKit
 
 @main
-struct SessionsApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) var delegate
-    @StateObject private var store = SessionStore()
-    var body: some Scene {
-        Window("Sessions", id: "main") {
-            ContentView(store: store).frame(minWidth: 900, minHeight: 540)
-                .preferredColorScheme(.dark)
+struct SessionsApp {
+    static func main() {
+        let app = NSApplication.shared
+        let delegate = AppDelegate()
+        app.delegate = delegate
+        app.setActivationPolicy(.regular)
+        if CommandLine.arguments.contains("--check-window") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                let windows = app.windows.filter { $0.title == "Sessions" }
+                let visible = windows.contains { $0.isVisible && !$0.isMiniaturized && $0.frame.width >= 900 && $0.frame.height > 100 }
+                print(visible ? "Sessions window opens" : "Sessions window is missing")
+                fflush(stdout)
+                exit(visible ? 0 : 1)
+            }
         }
-        .defaultSize(width: 1280, height: 820)
-        .commands {
-            CommandGroup(replacing: .newItem) { Button("Sessions") { delegate.showWindow() }.keyboardShortcut("n") }
-            CommandGroup(after: .toolbar) { Button("Refresh Sessions") { store.refresh() }.keyboardShortcut("r") }
-        }
+        withExtendedLifetime(delegate) { app.run() }
     }
 }
-final class AppDelegate: NSObject, NSApplicationDelegate {
+
+final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
+    private var window: NSWindow!
+    private var content: SessionsContent!
+    private var keyMonitor: Any?
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.regular)
-        NSApp.activate(ignoringOtherApps: true)
-    }
-    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        showWindow(); return true
-    }
-    func showWindow() { NSApp.windows.first(where: { $0.canBecomeMain })?.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
-}
-
-func toolColor(_ tool: String) -> Color { tool == "claude" ? .orange : tool == "codex" ? .green : .purple }
-func highlighted(_ text: String, _ query: String) -> AttributedString {
-    var result = AttributedString(text)
-    for term in queryTerms(query) {
-        var start = text.startIndex
-        while start < text.endIndex, let range = text.range(of: term, options: .caseInsensitive, range: start..<text.endIndex) {
-            if let lower = AttributedString.Index(range.lowerBound, within: result), let upper = AttributedString.Index(range.upperBound, within: result) {
-                result[lower..<upper].backgroundColor = .yellow.opacity(0.3)
-            }
-            start = range.upperBound
+        content = SessionsContent(store: SessionStore())
+        window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+        window.title = "Sessions"
+        window.identifier = NSUserInterfaceItemIdentifier("main")
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(srgbRed: 14/255, green: 15/255, blue: 18/255, alpha: 1)
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.minSize = NSSize(width: 900, height: 0)
+        window.isReleasedWhenClosed = false
+        window.delegate = self
+        window.acceptsMouseMovedEvents = true
+        window.contentView = content
+        window.setFrame(NSRect(x: 0, y: 0, width: 1280, height: 820), display: false)
+        window.center()
+        buildMenu()
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self, event.window === self.window, self.content.store.mode == "Timeline",
+                  !event.modifierFlags.contains(.option), !event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
+            let key = event.charactersIgnoringModifiers ?? ""
+            let direction = ["+", "="].contains(key) ? -1 : key == "-" ? 1 : 0
+            guard direction != 0 else { return event }
+            self.content.zoom(direction)
+            return nil
         }
+        showWindow()
+        content.sidebar.query.focus()
     }
-    return result
-}
-
-struct ContentView: View {
-    @ObservedObject var store: SessionStore
-    @FocusState private var searchFocused: Bool
-    var body: some View {
-        VStack(spacing: 0) {
-            if store.mode == "Timeline" { TimelineView(store: store) }
-            else {
-                HSplitView {
-                    VStack(spacing: 0) {
-                        HStack {
-                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                            TextField("Search sessions", text: $store.query).textFieldStyle(.plain).focused($searchFocused)
-                            if !store.query.isEmpty { Button { store.query = "" } label: { Image(systemName: "xmark.circle.fill") }.buttonStyle(.plain) }
-                        }.padding(12)
-                        Picker("Tool", selection: $store.tool) {
-                            Text("All").tag("all"); Text("Claude").tag("claude"); Text("Codex").tag("codex"); Text("Cursor").tag("cursor")
-                        }.pickerStyle(.segmented).labelsHidden().padding(.horizontal, 10).padding(.bottom, 10)
-                        Divider()
-                        List(selection: Binding(get: { store.selectedKey }, set: { store.select($0) })) {
-                            ForEach(store.visible, id: \.key) { session in
-                                SessionRow(session: session, store: store).tag(session.key)
-                                    .contextMenu { SessionMenu(session: session, store: store) }
-                                    .onDrag { NSItemProvider(object: (session.resumeCommand + "\n") as NSString) }
-                            }
-                        }.listStyle(.sidebar)
-                        HStack { Text(store.status); Spacer(); if !store.query.isEmpty { Text("\(store.visible.count) matches") } }
-                            .font(.caption).foregroundStyle(.secondary).padding(10)
-                    }.frame(minWidth: 300, idealWidth: 360, maxWidth: 520)
-                    Group {
-                        if let session = store.detail { TranscriptView(session: session, store: store).id(session.key) }
-                        else if !store.detailError.isEmpty { ContentUnavailableView(store.detailError, systemImage: "exclamationmark.triangle") }
-                        else if store.selectedKey != nil { ProgressView("Reading transcript…").frame(maxWidth: .infinity, maxHeight: .infinity) }
-                        else { ContentUnavailableView("Choose a session", systemImage: "text.bubble", description: Text("Browse your Claude, Codex, and Cursor history.")) }
-                    }.frame(minWidth: 450, maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        }
-        .toolbar {
-            ToolbarItem(placement: .principal) {
-                Picker("View", selection: $store.mode) { Text("Sessions").tag("Sessions"); Text("Timeline").tag("Timeline") }
-                    .pickerStyle(.segmented).frame(width: 220)
-            }
-            ToolbarItem { Button { store.refresh() } label: { Image(systemName: "arrow.clockwise") }.help("Refresh sessions (⌘R)") }
-        }
-        .background {
-            Button("") { searchFocused = true }.keyboardShortcut("f", modifiers: store.detail == nil ? .command : [.command, .shift]).hidden()
-        }
+    @objc func showWindow() {
+        NSApp.unhide(nil)
+        if window.isMiniaturized { window.deminiaturize(nil) }
+        window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true)
     }
-}
-struct SessionRow: View {
-    let session: Session
-    @ObservedObject var store: SessionStore
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 7) {
-                Circle().fill(toolColor(session.tool)).frame(width: 7, height: 7)
-                Text(highlighted(session.title, store.query)).fontWeight(.medium).lineLimit(2)
-                Spacer(minLength: 0)
-                if store.live.contains(session.key) { Text("live").font(.caption2).foregroundStyle(.green) }
-                Button { store.togglePin(session.key) } label: { Image(systemName: store.pins.contains(session.key) ? "pin.fill" : "pin").foregroundStyle(store.pins.contains(session.key) ? .orange : .secondary) }.buttonStyle(.borderless).help("Pin or unpin session")
-            }
-            HStack { Text(session.project.isEmpty ? "—" : session.project); Spacer(); Text(Date(timeIntervalSince1970: session.updatedAt / 1000), style: .relative) }
-                .font(.caption).foregroundStyle(.secondary)
-            Text(highlighted(session.snippet(queryTerms(store.query)), store.query)).font(.caption).foregroundStyle(.secondary).lineLimit(2)
-        }.padding(.vertical, 6).accessibilityElement(children: .contain)
-    }
-}
-struct SessionMenu: View {
-    let session: Session
-    @ObservedObject var store: SessionStore
-    var body: some View {
-        Button(store.pins.contains(session.key) ? "Unpin" : "Pin to Top") { store.togglePin(session.key) }
-        Divider()
-        Button("Copy Command") { store.copy(session.resumeCommand) }
-        Button("Copy Title") { store.copy(session.title) }
-        Button("Copy Session ID") { store.copy(session.id) }
-        Button("Copy Working Directory") { store.copy(session.cwd) }
-        Button("Copy Transcript Path") { store.copy(session.filePath) }
-        Button("Show Transcript in Finder") { NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: session.filePath)]) }
+    @objc private func find() { content.focusFind() }
+    @objc private func refresh() { content.store.refresh() }
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool { showWindow(); return true }
+    private func buildMenu() {
+        let menu = NSMenu()
+        func submenu(_ title: String) -> NSMenu {
+            let item = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            let child = NSMenu(title: title); item.submenu = child; menu.addItem(item); return child
+        }
+        let app = submenu("Sessions")
+        app.addItem(withTitle: "About Sessions", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(.separator())
+        app.addItem(withTitle: "Hide Sessions", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        app.addItem(withTitle: "Quit Sessions", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+        let file = submenu("File")
+        let open = file.addItem(withTitle: "Sessions", action: #selector(showWindow), keyEquivalent: "n"); open.target = self
+        file.addItem(withTitle: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let edit = submenu("Edit")
+        for (title, action, key) in [("Undo", "undo:", "z"), ("Redo", "redo:", "Z"), ("Cut", "cut:", "x"), ("Copy", "copy:", "c"), ("Paste", "paste:", "v"), ("Select All", "selectAll:", "a")] {
+            edit.addItem(withTitle: title, action: Selector(action), keyEquivalent: key)
+        }
+        let find = edit.addItem(withTitle: "Find", action: #selector(find), keyEquivalent: "f"); find.target = self
+        let view = submenu("View")
+        let refresh = view.addItem(withTitle: "Refresh Sessions", action: #selector(refresh), keyEquivalent: "r"); refresh.target = self
+        view.addItem(withTitle: "Toggle Full Screen", action: #selector(NSWindow.toggleFullScreen(_:)), keyEquivalent: "f").keyEquivalentModifierMask = [.command, .control]
+        let windows = submenu("Window")
+        windows.addItem(withTitle: "Minimize", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        windows.addItem(withTitle: "Zoom", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        NSApp.windowsMenu = windows; NSApp.mainMenu = menu
     }
 }

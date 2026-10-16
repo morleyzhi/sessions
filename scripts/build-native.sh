@@ -4,8 +4,9 @@ cd "$(dirname "$0")/.."
 APP="dist/Sessions.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" dist/swift-cache
 swiftc -O -whole-module-optimization -swift-version 5 -target "$(uname -m)-apple-macosx14.0" \
-  -module-cache-path dist/swift-cache native/*.swift -o "$APP/Contents/MacOS/Sessions" \
-  -framework AppKit -framework SwiftUI -lsqlite3
+  -module-cache-path dist/swift-cache native/App.swift native/Models.swift native/Indexers.swift native/Store.swift native/Appearance.swift native/SessionList.swift native/Markdown.swift native/TranscriptView.swift native/TimelineView.swift native/ContentView.swift -o "$APP/Contents/MacOS/Sessions" \
+  -framework AppKit -lsqlite3
+rm -rf "$APP/Contents/Resources/renderer"
 swift -module-cache-path dist/swift-cache scripts/make-icon.swift dist/Sessions.iconset
 iconutil -c icns dist/Sessions.iconset -o "$APP/Contents/Resources/Sessions.icns"
 cat > "$APP/Contents/Info.plist" <<'PLIST'

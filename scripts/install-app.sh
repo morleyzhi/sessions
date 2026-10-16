@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 BUILT="dist/Sessions.app"
 INSTALLED="/Applications/Sessions.app"
 bash scripts/build-native.sh
-if [ ! -x "$BUILT/Contents/MacOS/Sessions" ] || [ -d "$BUILT/Contents/Frameworks/Electron Framework.framework" ]; then
+if [ ! -x "$BUILT/Contents/MacOS/Sessions" ] || [ -d "$BUILT/Contents/Resources/renderer" ] || [ -d "$BUILT/Contents/Frameworks/Electron Framework.framework" ]; then
   echo "The build does not contain the native Sessions executable." >&2
   exit 1
 fi

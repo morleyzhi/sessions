@@ -24,6 +24,7 @@ func replace(_ pattern: String, _ text: String, _ replacement: String = "") -> S
 func prefixUTF16(_ text: String, _ count: Int) -> String { String(decoding: text.utf16.prefix(count), as: UTF16.self) }
 func collapse(_ text: String) -> String { replace(#"\s+"#, text, " ").trimmingCharacters(in: .whitespacesAndNewlines) }
 func trimmed(_ text: String) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+func shellDoubleQuote(_ text: String) -> String { "\"" + text.reduce("") { $0 + (["\\", "\"", "$", "`"].contains(String($1)) ? "\\" : "") + String($1) } + "\"" }
 func shellQuote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
 func queryTerms(_ query: String) -> [String] {
     matches(#""[^"]*"?|\S+"#, query.lowercased()).map { trimmed($0[0].replacingOccurrences(of: "\"", with: "")) }.filter { !$0.isEmpty }
@@ -108,7 +109,7 @@ struct Session: Codable, Identifiable, Equatable {
     var toolName: String { ["claude": "Claude", "codex": "Codex", "cursor": "Cursor"][tool] ?? tool }
     var resumeCommand: String {
         let command = ["claude": "claude --resume ", "codex": "codex resume ", "cursor": "cursor-agent --resume="][tool] ?? ""
-        return (cwd.isEmpty ? "" : "cd \(shellQuote(cwd)) && ") + command + shellQuote(id)
+        return (cwd.isEmpty ? "" : "cd \(shellDoubleQuote(cwd)) && ") + command + (matches(#"^[A-Za-z0-9_-]+$"#, id).isEmpty ? shellQuote(id) : id)
     }
     var isReview: Bool {
         let opening = replace(#"https?://\S+"#, prefixUTF16(timeline.first?.text ?? preview, 400))
@@ -118,10 +119,12 @@ struct Session: Codable, Identifiable, Equatable {
         return review != nil || !matches(#"(?i)\b(?:re[ -]?)?review\b"#, title).isEmpty
     }
     func snippet(_ terms: [String]) -> String {
-        guard let term = terms.first, let range = searchText.range(of: term, options: .caseInsensitive) else { return preview }
-        let start = searchText.index(range.lowerBound, offsetBy: -60, limitedBy: searchText.startIndex) ?? searchText.startIndex
-        let end = searchText.index(range.upperBound, offsetBy: 140, limitedBy: searchText.endIndex) ?? searchText.endIndex
-        return (start == searchText.startIndex ? "" : "…") + collapse(String(searchText[start..<end])) + "…"
+        guard let term = terms.first else { return preview }
+        let source = searchText as NSString
+        let position = source.range(of: term, options: .caseInsensitive).location
+        guard position != NSNotFound else { return preview }
+        let start = max(0, position - 60), end = min(source.length, position + 140)
+        return (start > 0 ? "…" : "") + replace(#"\s+"#, source.substring(with: NSRange(location: start, length: end - start)), " ") + "…"
     }
 }
 
