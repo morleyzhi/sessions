@@ -35,6 +35,7 @@ final class ActionButton: NSButton {
     var radius: CGFloat = 6
     var active = false, capsule = false, showBorder = true
     var dot: String?
+    var showsChevron = false
     var textAlignment: NSTextAlignment = .center
     var drawingTitle: NSAttributedString? { didSet { needsDisplay = true } }
     var hovered = false
@@ -42,7 +43,7 @@ final class ActionButton: NSButton {
     private var area: NSTrackingArea?
     init(_ title: String, size: CGFloat = 12, action: (() -> Void)? = nil) {
         super.init(frame: .zero)
-        self.title = title; font = .systemFont(ofSize: size); isBordered = false
+        self.title = title; font = .systemFont(ofSize: size); isBordered = false; focusRingType = .none
         target = self; self.action = #selector(invoke); actionBlock = action
         setButtonType(.momentaryPushIn)
         setAccessibilityLabel(title)
@@ -61,10 +62,20 @@ final class ActionButton: NSButton {
         rounded(bounds, capsule ? bounds.height / 2 : radius, fill: active || (hovered && hoverStyle) ? Theme.hover : fill, border: showBorder ? (hovered && hoverStyle ? Theme.accent : stroke) : nil)
         let size = font?.pointSize ?? 12
         let textWidth = (title as NSString).size(withAttributes: [.font: font!]).width
-        let total = textWidth + (dot == nil ? 0 : 12)
-        var x = textAlignment == .left ? 11 : (bounds.width - total) / 2
+        let total = ceil(textWidth) + (dot == nil ? 0 : 12) + (showsChevron ? 18 : 0)
+        let start = textAlignment == .left ? 11 : max(8, (bounds.width - total) / 2)
+        var x = start
         if let dot { drawDot(dot, NSRect(x: x, y: (bounds.height - 7) / 2, width: 7, height: 7), alpha: active ? 1 : 0.55); x += 12 }
-        let rect = NSRect(x: x, y: (bounds.height - size * 1.2) / 2, width: bounds.width - x - (textAlignment == .left ? 11 : x), height: size * 1.4)
+        let rect = NSRect(x: x, y: (bounds.height - size * 1.2) / 2, width: max(0, bounds.width - x - (textAlignment == .left ? 11 : start) - (showsChevron ? 18 : 0)), height: size * 1.4)
+        if showsChevron {
+            let center = NSPoint(x: bounds.width - start - 5, y: bounds.midY)
+            let path = NSBezierPath(); path.move(to: NSPoint(x: center.x - 3.5, y: center.y - 1.75))
+            path.line(to: NSPoint(x: center.x, y: center.y + 1.75)); path.line(to: NSPoint(x: center.x + 3.5, y: center.y - 1.75))
+            ink.setStroke(); path.lineWidth = 1.3; path.lineCapStyle = .round; path.lineJoinStyle = .round; path.stroke()
+        }
+        if window?.firstResponder === self {
+            rounded(bounds.insetBy(dx: 2, dy: 2), capsule ? (bounds.height - 4) / 2 : max(0, radius - 2), fill: .clear, border: Theme.accent.withAlphaComponent(0.65))
+        }
         if let drawingTitle { drawingTitle.draw(in: rect) }
         else { drawText(title, in: rect, size: size, color: isEnabled ? ink : Theme.muted) }
     }

@@ -5,14 +5,7 @@ final class SessionCell: NSTableCellView {
     var selected = false, pinned = false, live = false, hovered = false
     var terms: [String] = []
     var pin: (() -> Void)?
-    private var area: NSTrackingArea?
     override var isFlipped: Bool { true }
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas(); if let area { removeTrackingArea(area) }
-        area = NSTrackingArea(rect: bounds, options: [.activeInKeyWindow, .mouseEnteredAndExited], owner: self); addTrackingArea(area!)
-    }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
-    override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func mouseDown(with event: NSEvent) {
         if convert(event.locationInWindow, from: nil).x >= bounds.width - 29 { pin?() }
         else { super.mouseDown(with: event) }
@@ -69,6 +62,24 @@ final class SessionCell: NSTableCellView {
 }
 final class SessionTableView: NSTableView {
     var menuForRow: ((Int) -> NSMenu?)?
+    private var area: NSTrackingArea?
+    private weak var hoveredCell: SessionCell?
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let area { removeTrackingArea(area) }
+        area = NSTrackingArea(rect: .zero, options: [.inVisibleRect, .activeInKeyWindow, .mouseEnteredAndExited, .mouseMoved], owner: self)
+        addTrackingArea(area!); updateHover()
+    }
+    func updateHover() {
+        let point = window.map { convert($0.mouseLocationOutsideOfEventStream, from: nil) } ?? NSPoint(x: -1, y: -1)
+        let index = visibleRect.contains(point) && window?.isKeyWindow == true ? row(at: point) : -1
+        let cell = index >= 0 ? view(atColumn: 0, row: index, makeIfNecessary: false) as? SessionCell : nil
+        if hoveredCell !== cell { hoveredCell?.hovered = false; hoveredCell?.needsDisplay = true; hoveredCell = cell }
+        cell?.hovered = true; cell?.needsDisplay = true
+    }
+    override func mouseEntered(with event: NSEvent) { updateHover() }
+    override func mouseMoved(with event: NSEvent) { updateHover() }
+    override func mouseExited(with event: NSEvent) { hoveredCell?.hovered = false; hoveredCell?.needsDisplay = true; hoveredCell = nil }
     override func frameOfCell(atColumn column: Int, row: Int) -> NSRect {
         var rect = super.frameOfCell(atColumn: column, row: row)
         rect.origin.x = 0; rect.size.width = bounds.width
@@ -83,11 +94,15 @@ final class SessionList: NSObject, NSTableViewDataSource, NSTableViewDelegate {
     var terms: [String] = [], live: Set<String> = [], selected: String?
     var pinned = false
     private var applying = false
+    private var scrollObserver: NSObjectProtocol?
+    deinit { if let scrollObserver { NotificationCenter.default.removeObserver(scrollObserver) } }
     var select: ((String) -> Void)?, pin: ((String) -> Void)?, menu: ((Session) -> NSMenu)?
     override init() {
         scroll = scrollView(table)
         super.init()
         scroll.autohidesScrollers = true
+        scroll.contentView.postsBoundsChangedNotifications = true
+        scrollObserver = NotificationCenter.default.addObserver(forName: NSView.boundsDidChangeNotification, object: scroll.contentView, queue: .main) { [weak self] _ in self?.table.updateHover() }
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("sessions")); column.resizingMask = .autoresizingMask
         table.addTableColumn(column); table.headerView = nil; table.dataSource = self; table.delegate = self
         table.style = .fullWidth; table.backgroundColor = Theme.background; table.intercellSpacing = .zero; table.selectionHighlightStyle = .none
@@ -127,6 +142,7 @@ final class SessionList: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         if !changedHeights.isEmpty { table.noteHeightOfRows(withIndexesChanged: changedHeights) }
         if let index = rows.firstIndex(where: { $0.key == selected }) { table.selectRowIndexes(IndexSet(integer: index), byExtendingSelection: false) } else { table.deselectAll(nil) }
         applying = false
+        table.updateHover()
         if oldKeys != newKeys, scroll.contentView.bounds.minY > 0, let anchor, let index = rows.firstIndex(where: { $0.key == anchor }) {
             scroll.contentView.scroll(to: NSPoint(x: 0, y: max(0, table.rect(ofRow: index).minY + offset))); scroll.reflectScrolledClipView(scroll.contentView)
         }
@@ -140,7 +156,7 @@ final class SessionList: NSObject, NSTableViewDataSource, NSTableViewDelegate {
         view.identifier = id; configure(view, session: rows[row]); return view
     }
     private func configure(_ view: SessionCell, session: Session) {
-        view.session = session; view.pinned = pinned; view.live = live.contains(session.key); view.selected = selected == session.key; view.terms = terms
+        view.hovered = false; view.session = session; view.pinned = pinned; view.live = live.contains(session.key); view.selected = selected == session.key; view.terms = terms
         view.pin = { [weak self] in self?.pin?(session.key) }; view.needsDisplay = true
         view.setAccessibilityLabel(session.title + ", " + session.project + ", " + relativeTime(session.updatedAt))
     }

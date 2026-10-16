@@ -12,6 +12,7 @@ final class TimelinePromptControl: NSButton {
     var pressed: () -> Void
     private var hovered = false
     private var tracking: NSTrackingArea?
+    private static let clock: DateFormatter = { let value = DateFormatter(); value.dateFormat = "HH:mm:ss"; return value }()
     init(row: TimelineRow, color: NSColor, pressed: @escaping () -> Void) {
         self.row = row; ink = color; self.pressed = pressed
         super.init(frame: .zero); isBordered = false; focusRingType = .none
@@ -32,8 +33,7 @@ final class TimelinePromptControl: NSButton {
     override func draw(_ dirtyRect: NSRect) {
         rounded(bounds, 4, fill: hovered ? Theme.hover : Theme.panel, border: hovered || window?.firstResponder === self ? Theme.accent : Theme.border)
         ink.setFill(); NSRect(x: 0, y: 0, width: 3, height: bounds.height).fill()
-        let date = DateFormatter(); date.dateFormat = "HH:mm:ss"
-        drawText(date.string(from: Date(timeIntervalSince1970: row.timestamp / 1000)), in: NSRect(x: 9, y: 5, width: 58, height: 18), size: 10, color: Theme.muted)
+        drawText(Self.clock.string(from: Date(timeIntervalSince1970: row.timestamp / 1000)), in: NSRect(x: 9, y: 5, width: 58, height: 18), size: 10, color: Theme.muted)
         drawText(row.text, in: NSRect(x: 70, y: 4, width: bounds.width - 80, height: 20), size: 12)
     }
 }
@@ -47,8 +47,10 @@ final class TimelineCanvas: NSView {
     var observer: NSObjectProtocol?
     private var rows: [(TimelineRow, Double, Double)] = []
     private var visible: [(TimelineRow, Double, Double)] = []
+    private var rowBottoms: [Double] = []
     private var lanes: [String] = []
     private var labels: [String: String] = [:]
+    private var activityByLane: [String: [TimelineRow]] = [:]
     private var scale = TimeScale(rows: [], now: Date().timeIntervalSince1970 * 1000, pixelsPerMS: 1)
     private var hitAreas: [(NSRect, TimelineRow)] = []
     private var viewportHeight = 0.0
@@ -82,14 +84,23 @@ final class TimelineCanvas: NSView {
         let prompts = sessions.filter { !exclude || !$0.isReview }.flatMap(\.timeline).sorted { $0.timestamp > $1.timestamp }
         let now = max(Date().timeIntervalSince1970 * 1000, prompts.first?.end ?? 0)
         scale = TimeScale(rows: prompts, now: now, pixelsPerMS: (viewportHeight - header) / (Double(zoom) * 60000))
-        var previous: [String: Double] = [:]
+        activityByLane = Dictionary(grouping: prompts, by: \.lane)
+        var lastInLane: [String: Int] = [:], counts: [Int: Int] = [:]
         labels = [:]; rows = []
         for row in prompts {
-            let y = max(scale.y(at: row.timestamp) + header, previous[row.lane] ?? header)
-            previous[row.lane] = y + 26
-            rows.append((row, y, scale.y(at: row.end) + header))
+            let y = scale.y(at: row.timestamp) + header
             labels[row.lane] = titles[row.lane] ?? row.label
+            if let index = lastInLane[row.lane], y - rows[index].1 < 28 {
+                counts[index, default: 1] += 1
+            } else {
+                lastInLane[row.lane] = rows.count
+                rows.append((row, y, scale.y(at: row.end) + header))
+            }
         }
+        for (index, count) in counts { rows[index].0.text = "\(count) prompts · " + rows[index].0.text }
+        rows.sort { $0.2 < $1.2 }
+        var bottom = 0.0
+        rowBottoms = rows.map { bottom = max(bottom, $0.1 + 28); return bottom }
         let height = max(viewportHeight, rows.map { $0.1 + 100 }.max() ?? viewportHeight)
         setFrameSize(NSSize(width: max(900, enclosingScrollView?.contentSize.width ?? 900), height: height))
         if let anchor, enclosingScrollView?.contentView.bounds.minY ?? 0 > 10 { scroll(to: anchor) }
@@ -106,9 +117,15 @@ final class TimelineCanvas: NSView {
         updatingVisible = true
         defer { updatingVisible = false }
         let rect = scroll.contentView.bounds
-        visible = rows.filter { $0.1 + 28 >= rect.minY && $0.2 <= rect.maxY }
+        // Rows are sorted by their top; accumulated bottoms include long-running work.
+        var low = 0, high = rows.count
+        while low < high { let mid = (low + high) / 2; if rowBottoms[mid] < rect.minY { low = mid + 1 } else { high = mid } }
+        let first = low
+        high = rows.count
+        while low < high { let mid = (low + high) / 2; if rows[mid].2 <= rect.maxY { low = mid + 1 } else { high = mid } }
+        visible = rows[first..<low].filter { $0.1 + 28 >= rect.minY }
         var active: [String] = []
-        for item in visible where !active.contains(item.0.lane) { active.append(item.0.lane) }
+        for item in visible where item.1 + 28 >= rect.minY + header && item.1 <= rect.maxY && !active.contains(item.0.lane) { active.append(item.0.lane) }
         lanes = active.filter { !lanes.contains($0) } + lanes.filter { active.contains($0) }
         columnWidth = max(240, (scroll.contentSize.width - axis) / Double(max(1, lanes.count)))
         let width = max(scroll.contentSize.width, axis + columnWidth * Double(lanes.count))
@@ -158,20 +175,16 @@ final class TimelineCanvas: NSView {
                 time -= step
             }
         }
-        formatter.dateFormat = "HH:mm:ss"
         for (row, y, top) in visible {
             guard let index = lanes.firstIndex(of: row.lane) else { continue }
             let x = axis + Double(index) * columnWidth
+            guard x + columnWidth >= view.minX, x <= view.maxX else { continue }
             if row.end > row.timestamp {
                 color(row.lane).withAlphaComponent(0.12).setFill()
                 NSRect(x: x + 5, y: max(top, view.minY), width: columnWidth - 10, height: max(0, min(view.maxY, y + 25) - max(top, view.minY))).fill()
             }
             guard y + 28 >= view.minY, y <= view.maxY else { continue }
             let rect = NSRect(x: x + 8, y: y, width: columnWidth - 16, height: 25)
-            rounded(rect, 4, fill: Theme.panel, border: Theme.border)
-            color(row.lane).setFill(); NSRect(x: rect.minX, y: y, width: 3, height: 25).fill()
-            text(formatter.string(from: Date(timeIntervalSince1970: row.timestamp / 1000)), NSRect(x: x + 17, y: y + 5, width: 58, height: 18), color: Theme.muted, size: 10)
-            text(row.text, NSRect(x: x + 78, y: y + 4, width: columnWidth - 96, height: 20), size: 12)
             hitAreas.append((rect, row))
         }
         Theme.background.setFill(); NSRect(x: view.minX, y: view.minY, width: view.width, height: header).fill()
@@ -195,6 +208,8 @@ final class TimelineCanvas: NSView {
         var active = Set<String>()
         for (row, y, _) in visible where y >= rect.minY + header && y < rect.maxY {
             guard let index = lanes.firstIndex(of: row.lane) else { continue }
+            let x = axis + Double(index) * columnWidth
+            guard x + columnWidth >= rect.minX, x <= rect.maxX else { continue }
             active.insert(row.id)
             let button = buttons[row.id] ?? TimelinePromptControl(row: row, color: color(row.lane)) { [weak self] in self?.open?(row) }
             if button.superview == nil { addSubview(button); buttons[row.id] = button }
@@ -216,7 +231,7 @@ final class TimelineCanvas: NSView {
         let point = convert(event.locationInWindow, from: nil)
         let index = Int(floor((point.x - axis) / columnWidth))
         guard lanes.indices.contains(index), let window else { hideTooltip(); return }
-        let lane = lanes[index], activity = rows.filter { $0.0.lane == lane }.map { $0.0 }
+        let lane = lanes[index], activity = activityByLane[lane] ?? []
         let keys = Set(activity.map(\.sessionKey)), related = sessions.filter { keys.contains($0.key) }
         var lines = [labels[lane] ?? lane]
         if lane.hasPrefix("https://") { lines.append(lane) }
@@ -262,7 +277,7 @@ final class TimelinePane: FlippedView {
     let heading = label("Work timeline", size: 17, weight: .bold)
     let review = NSButton(checkboxWithTitle: "Exclude reviews", target: nil, action: nil)
     let zoomLabel = label("Zoom", size: 12, color: Theme.muted), jumpLabel = label("Jump to", size: 12, color: Theme.muted)
-    let zoom = ActionButton("1 hour  ⌄"), date = InputView("mm/dd/yyyy", size: 12), calendar = ActionButton("▦"), now = ActionButton("Now ↑")
+    let zoom = ActionButton("1 hour"), date = InputView("mm/dd/yyyy", size: 12), calendar = ActionButton("▦"), now = ActionButton("Now ↑")
     let levels = [15, 30, 60, 120, 240, 480, 720, 1440, 2880]
     let names = ["15 min", "30 min", "1 hour", "2 hours", "4 hours", "8 hours", "12 hours", "1 day", "2 days"]
     private(set) var zoomIndex = 2
@@ -281,6 +296,7 @@ final class TimelinePane: FlippedView {
         review.attributedTitle = attributed("Exclude reviews", size: 12, color: Theme.muted)
         review.state = UserDefaults.standard.object(forKey: "timeline-exclude-reviews") as? Bool == false ? .off : .on
         review.target = self; review.action = #selector(toggleReviews)
+        zoom.showsChevron = true
         zoom.actionBlock = { [weak self] in self?.showZoomMenu() }
         now.actionBlock = { [weak self] in guard let self else { return }; self.setSessions(self.sessions); self.canvas.scroll(to: nil) }
         date.changed = { [weak self] _ in self?.jumpDate() }; date.submitted = { [weak self] _ in self?.jumpDate() }
@@ -305,7 +321,7 @@ final class TimelinePane: FlippedView {
     }
     override func draw(_ dirtyRect: NSRect) { Theme.background.setFill(); bounds.fill(); Theme.border.setFill(); NSRect(x: 0, y: 49, width: bounds.width, height: 1).fill() }
     @objc private func toggleReviews() { UserDefaults.standard.set(review.state == .on, forKey: "timeline-exclude-reviews"); setSessions(sessions) }
-    func stepZoom(_ direction: Int) { zoomIndex = min(levels.count - 1, max(0, zoomIndex + direction)); zoom.title = names[zoomIndex] + "  ⌄"; zoom.needsDisplay = true; setSessions(sessions) }
+    func stepZoom(_ direction: Int) { zoomIndex = min(levels.count - 1, max(0, zoomIndex + direction)); zoom.title = names[zoomIndex]; zoom.setAccessibilityLabel(names[zoomIndex]); zoom.needsDisplay = true; setSessions(sessions) }
     private func showZoomMenu() {
         let menu = NSMenu()
         for (index, name) in names.enumerated() { let item = NSMenuItem(title: name, action: #selector(chooseZoom(_:)), keyEquivalent: ""); item.target = self; item.tag = index; item.state = index == zoomIndex ? .on : .off; menu.addItem(item) }

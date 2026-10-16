@@ -28,9 +28,11 @@ import AppKit
         let existingCell = root.sidebar.list.table.view(atColumn: 0, row: 0, makeIfNecessary: true)
         let leadingEdge = existingCell?.convert(existingCell!.bounds, to: root.sidebar.list.table).minX ?? -1
         check("Session rows have no system inset", leadingEdge >= 0 && leadingEdge <= 1)
+        (existingCell as? SessionCell)?.hovered = true
         var revised = session; revised.updatedAt += 1000
         root.sidebar.list.apply([revised], terms: [], live: [session.key], selected: session.key)
         check("Refreshing a row preserves its native view", root.sidebar.list.table.view(atColumn: 0, row: 0, makeIfNecessary: true) === existingCell)
+        check("Refreshing clears a reused row's hover", (existingCell as? SessionCell)?.hovered == false)
         root.sidebar.list.apply([revised, second], terms: [], live: [], selected: session.key)
         root.sidebar.list.apply([second, revised], terms: [], live: [], selected: session.key)
         check("Reordering sessions moves their rows", root.sidebar.list.rows.map(\.key) == [second.key, session.key])
@@ -99,6 +101,27 @@ import AppKit
         check("A populated timeline finishes layout", canvas.frame.height.isFinite)
         for zoom in [15, 30, 240, 1440, 2880] { canvas.configure([session], false, zoom); canvas.updateVisible() }
         check("Timeline zoom retains a finite document size", canvas.frame.height.isFinite)
+        var busy = session
+        busy.timeline = (0..<2000).map { index in
+            var row = session.timeline[0]; row.messageIndex = index
+            row.timestamp = now - Double(index) * 60000; row.end = row.timestamp
+            return row
+        }
+        canvas.configure([busy], false, 2880)
+        check("Two-day zoom keeps dense activity aligned to time", canvas.frame.height < 1400)
+        let cards = canvas.subviews.compactMap { $0 as? TimelinePromptControl }
+        check("Two-day zoom groups overlapping prompts", cards.contains { $0.row.text.contains("prompts ·") })
+        check("Two-day zoom limits visible prompt controls", cards.count < 30)
+        busy.timeline = (0..<2000).map { index in
+            var row = session.timeline[0]; row.messageIndex = index
+            row.timestamp = now - Double(index) * 10 * 60000; row.end = row.timestamp
+            return row
+        }
+        canvas.configure([busy], false, 60)
+        canvas.scroll(to: now - 1000 * 10 * 60000)
+        let scrolledCards = canvas.subviews.compactMap { $0 as? TimelinePromptControl }
+        check("Scrolling creates controls only inside the viewport", scrolledCards.allSatisfy { scroll.contentView.bounds.intersects($0.frame) })
+        check("Scrolling reaches older timeline prompts", scrolledCards.contains { $0.row.messageIndex >= 1000 })
         store.togglePin(session.key)
         let savedPins = try JSONDecoder().decode([String].self, from: Data(contentsOf: directory.appendingPathComponent("pins.json")))
         check("Pins persist on disk", savedPins.contains(session.key))
