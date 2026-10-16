@@ -60,6 +60,7 @@ import SQLite3
         let scale = TimeScale(rows: [row(5), row(90)], now: now, pixelsPerMS: 10 / 60000)
         check("Lunch gaps collapse to 44 points", scale.segments.filter(\.gap).first.map { $0.bottom - $0.top } == 44)
         check("Time after lunch retains its position", scale.y(at: now - 90 * 60000) == 114)
+        check("Idle gaps shrink at two-day zoom", TimeScale(rows: [row(5), row(90)], now: now, pixelsPerMS: 650 / (2880 * 60000)).segments.filter(\.gap).allSatisfy { abs($0.bottom - $0.top - 8) < 0.001 })
         check("Overlapping work stays expanded", TimeScale(rows: [row(90, 30), row(40, 0)], now: now, pixelsPerMS: 10 / 60000).segments.filter(\.gap).isEmpty)
         check("Short pauses keep the selected zoom", TimeScale(rows: [row(5), row(15)], now: now, pixelsPerMS: 10 / 60000).y(at: now - 15 * 60000) == 150)
         for pixels in [2.0, 10, 40] {

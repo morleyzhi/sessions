@@ -157,8 +157,11 @@ final class TimelineCanvas: NSView {
             if segment.gap {
                 let minutes = Int((segment.newer - segment.older) / 60000)
                 let duration = minutes >= 1440 ? "\(minutes / 1440)d \(minutes % 1440 / 60)h" : minutes >= 60 ? "\(minutes / 60)h \(minutes % 60)m" : "\(minutes)m"
-                text("↯ \(duration) skipped", NSRect(x: view.minX + 8, y: segment.top + header + 12, width: axis - 12, height: 20), color: Theme.muted)
-                Theme.border.setFill(); NSRect(x: axis, y: segment.top + header + 22, width: frame.width - axis, height: 1).fill()
+                let height = segment.bottom - segment.top
+                if height >= 30 {
+                    text("↯ \(duration) skipped", NSRect(x: view.minX + 8, y: segment.top + header + (height - 20) / 2, width: axis - 12, height: 20), color: Theme.muted)
+                }
+                Theme.border.setFill(); NSRect(x: axis, y: segment.top + header + height / 2, width: frame.width - axis, height: 1).fill()
                 lastLabel = segment.bottom + header
                 continue
             }

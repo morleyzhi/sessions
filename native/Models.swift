@@ -185,7 +185,7 @@ struct TimeScale {
         for interval in merged.reversed() {
             if newer - interval.1 > 15 * 60000 {
                 add(newer - 60000, (time - newer + 60000) * pixelsPerMS)
-                add(interval.1 + 60000, 44, true)
+                add(interval.1 + 60000, min(44, max(8, 15 * 60000 * pixelsPerMS)), true)
             }
             newer = interval.0
         }
