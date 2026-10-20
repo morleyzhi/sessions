@@ -58,6 +58,8 @@ struct TokenChart {
 
 final class TokensCanvas: FlippedView {
     var chart: TokenChart? { didSet { needsDisplay = true } }
+    var selectedSeries: String? { didSet { needsDisplay = true } }
+    var shownColumns: [Int] { chart.map { chart in chart.series.indices.filter { selectedSeries == nil || chart.series[$0] == selectedSeries } } ?? [] }
     private let tooltip = TimelineTooltip()
     private var tracking: NSTrackingArea?
     var plot: NSRect { NSRect(x: 65, y: 28, width: max(1, bounds.width - 90), height: max(1, bounds.height - 88)) }
@@ -75,8 +77,10 @@ final class TokensCanvas: FlippedView {
     override func draw(_ dirtyRect: NSRect) {
         Theme.background.setFill(); bounds.fill()
         guard let chart else { return }
-        let rect = plot, maximum = ceil(chart.maximum / 10) * 10
-        drawText("OUTPUT TPS", in: NSRect(x: 12, y: 2, width: 150, height: 18), size: 10, color: Theme.muted)
+        let columns = shownColumns
+        let total = chart.values.map { row in columns.reduce(0.0) { $0 + row[$1] } }.max() ?? 0
+        let rect = plot, maximum = max(10, ceil(total / 10) * 10)
+        drawText(selectedSeries == nil ? "STACKED TPS" : "OUTPUT TPS", in: NSRect(x: 12, y: 2, width: 150, height: 18), size: 10, color: Theme.muted)
         for tick in 0...4 {
             let value = maximum * Double(tick) / 4, y = rect.maxY - rect.height * Double(tick) / 4
             Theme.border.setFill(); NSRect(x: rect.minX, y: y, width: rect.width, height: 1).fill()
@@ -84,7 +88,8 @@ final class TokensCanvas: FlippedView {
         }
         NSGraphicsContext.saveGraphicsState(); NSBezierPath(rect: rect).addClip()
         var lower = Array(repeating: 0.0, count: chart.values.count)
-        for (column, name) in chart.series.enumerated() {
+        for column in columns {
+            let name = chart.series[column]
             let upper = chart.values.enumerated().map { lower[$0.offset] + $0.element[column] }
             let color = color(name)
             var first = 0
@@ -97,9 +102,13 @@ final class TokensCanvas: FlippedView {
                 }
                 let fill = NSBezierPath(), line = NSBezierPath()
                 fill.move(to: point(first, lower)); fill.line(to: point(first, upper)); line.move(to: point(first, upper))
-                for index in (first + 1)..<end { fill.line(to: point(index, upper)); line.line(to: point(index, upper)) }
+                for index in (first + 1)..<end {
+                    fill.line(to: point(index, upper))
+                    if chart.values[index][column] > 0 || chart.values[index - 1][column] > 0 { line.line(to: point(index, upper)) }
+                    else { line.move(to: point(index, upper)) }
+                }
                 for index in (first..<end).reversed() { fill.line(to: point(index, lower)) }
-                fill.close(); color.withAlphaComponent(0.16).setFill(); fill.fill()
+                fill.close(); color.withAlphaComponent(0.32).setFill(); fill.fill()
                 color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke(); first = end
             }
             lower = upper
@@ -139,8 +148,8 @@ final class TokensCanvas: FlippedView {
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
         lines.append("\(chart.smoothingMinutes) min moving average")
-        lines.append(String(format: "Total: %.1f output TPS", chart.values[index].reduce(0, +)))
-        for (column, name) in chart.series.enumerated() { lines.append(String(format: "%@: %.1f TPS", name, chart.values[index][column])) }
+        lines.append(String(format: "Total: %.1f output TPS", shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }))
+        for column in shownColumns { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
         tooltip.show(lines.joined(separator: "\n"), in: window)
     }
 }
@@ -151,7 +160,8 @@ final class TokensPane: FlippedView {
     let newer = ActionButton("← Newer"), older = ActionButton("Older →"), now = ActionButton("Now")
     let range = label("", size: 12, color: Theme.muted)
     let note = label("", size: 11, color: Theme.muted)
-    let legend = NSTextView(), legendScroll = NSScrollView()
+    let legend = FlippedView(), legendScroll = NSScrollView()
+    private(set) var legendButtons: [ActionButton] = []
     let minutes = [60, 120, 240, 480, 720, 1440]
     private(set) var offset = 0.0
     private var samples: [TokenSample] = []
@@ -166,7 +176,6 @@ final class TokensPane: FlippedView {
         period.setAccessibilityLabel("Active time per screen")
         newer.actionBlock = { [weak self] in self?.page(-1) }; older.actionBlock = { [weak self] in self?.page(1) }
         now.actionBlock = { [weak self] in self?.offset = 0; self?.referenceNow = nil; self?.refresh() }
-        legend.isEditable = false; legend.isSelectable = true; legend.drawsBackground = false; legend.textContainerInset = NSSize(width: 0, height: 2)
         legendScroll.documentView = legend; legendScroll.hasVerticalScroller = true; legendScroll.drawsBackground = false; legendScroll.autohidesScrollers = true
         timer = Timer.scheduledTimer(withTimeInterval: 15, repeats: true) { [weak self] _ in guard let self, !self.isHidden, self.offset == 0 else { return }; self.refresh() }
         refresh()
@@ -205,16 +214,35 @@ final class TokensPane: FlippedView {
         }
         let chart = TokenChart(samples: filtered, now: referenceNow ?? Date().timeIntervalSince1970 * 1000, offset: offset, minutes: minutes[period.indexOfSelectedItem])
         offset = chart.offset; canvas.chart = chart
-        note.stringValue = "\(chart.smoothingMinutes) min moving average · Output TPS · Cursor has no timed usage"
+        if let selected = canvas.selectedSeries, !chart.series.contains(selected) { canvas.selectedSeries = nil }
+        note.stringValue = "\(chart.smoothingMinutes) min moving average · Colored bands stack to total TPS · Click a legend item to show it alone"
         newer.isEnabled = offset > 0; older.isEnabled = !filtered.isEmpty && offset + chart.duration < chart.totalDuration
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d, HH:mm"
         range.stringValue = formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 0) / 1000)) + "  →  " + formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 1) / 1000))
-        let text = NSMutableAttributedString()
-        for name in chart.series {
-            text.append(attributed("● ", size: 12, color: canvas.color(name)))
-            text.append(attributed(name + "    ", size: 11, color: Theme.muted))
+        if legendButtons.map(\.title) != ["Show all"] + chart.series.map({ "● " + $0 }) {
+            legendButtons.forEach { $0.removeFromSuperview() }; legendButtons = []
+            let all = ActionButton("Show all", size: 11)
+            all.active = canvas.selectedSeries == nil; all.actionBlock = { [weak self] in self?.isolateSeries(nil) }
+            legendButtons.append(all)
+            for name in chart.series {
+                let button = ActionButton("● " + name, size: 11)
+                button.ink = canvas.color(name); button.active = canvas.selectedSeries == name
+                button.toolTip = "Click to show only " + name + "; click again to show all"
+                button.actionBlock = { [weak self] in self?.isolateSeries(name) }
+                legendButtons.append(button)
+            }
+            for button in legendButtons { legend.addSubview(button) }
         }
-        legend.textStorage?.setAttributedString(text); needsLayout = true
+        for (index, button) in legendButtons.enumerated() {
+            button.active = index == 0 ? canvas.selectedSeries == nil : canvas.selectedSeries == chart.series[index - 1]
+            if index > 0 { button.ink = canvas.color(chart.series[index - 1]) }
+            button.needsDisplay = true
+        }
+        needsLayout = true
+    }
+    func isolateSeries(_ name: String?) {
+        canvas.selectedSeries = canvas.selectedSeries == name ? nil : name
+        refresh()
     }
     override func layout() {
         super.layout()
@@ -226,10 +254,14 @@ final class TokensPane: FlippedView {
         note.frame = NSRect(x: 20, y: 92, width: max(0, bounds.width - 40), height: 20)
         canvas.frame = NSRect(x: 0, y: 122, width: bounds.width, height: max(0, bounds.height - 206))
         legendScroll.frame = NSRect(x: 65, y: max(122, bounds.height - 78), width: max(0, bounds.width - 90), height: 65)
-        legend.setFrameSize(NSSize(width: legendScroll.contentSize.width, height: 65)); legend.textContainer?.containerSize = NSSize(width: legendScroll.contentSize.width, height: .greatestFiniteMagnitude)
-        legend.layoutManager?.ensureLayout(for: legend.textContainer!)
-        let height = legend.layoutManager?.usedRect(for: legend.textContainer!).height ?? 0
-        legend.setFrameSize(NSSize(width: legendScroll.contentSize.width, height: max(65, height + 8)))
+        let available = legendScroll.contentSize.width
+        var x = 0.0, y = 0.0
+        for button in legendButtons {
+            let width = min(available, ceil((button.title as NSString).size(withAttributes: [.font: button.font!]).width) + 24)
+            if x > 0, x + width > available { x = 0; y += 32 }
+            button.frame = NSRect(x: x, y: y, width: width, height: 27); x += width + 10
+        }
+        legend.setFrameSize(NSSize(width: available, height: max(65, y + 32)))
     }
     override func draw(_ dirtyRect: NSRect) { Theme.background.setFill(); bounds.fill() }
 }

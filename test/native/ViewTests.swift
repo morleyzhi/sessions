@@ -126,6 +126,9 @@ import AppKit
         let tokenSample = TokenSample(start: tokenNow - 240000, end: tokenNow, tokens: 2400, harness: "codex", model: "gpt", effort: "high")
         let chart = TokenChart(samples: [tokenSample, tokenSample], now: tokenNow, offset: 0, minutes: 60)
         check("Simultaneous sessions add their output rates", abs(chart.maximum - 20) < 0.001)
+        var secondModel = tokenSample; secondModel.model = "second"; secondModel.tokens = 4800
+        let combined = TokenChart(samples: [tokenSample, secondModel], now: tokenNow, offset: 0, minutes: 60)
+        check("Different models stack to their combined rate", abs(combined.maximum - 30) < 0.001)
         check("The chart starts at now on the left", chart.time(at: 0) == tokenNow)
         check("Older times appear on the right", chart.time(at: 1) < chart.time(at: 0))
         let history = TokenSample(start: tokenNow - 7200000, end: tokenNow - 7140000, tokens: 600, harness: "claude", model: "opus", effort: "low")
@@ -148,7 +151,7 @@ import AppKit
         check("Paging shows the preceding hour", olderChart.time(at: 0) == tokenNow - 3600000)
         check("Paging stops at recorded history", TokenChart(samples: [continuous], now: tokenNow, offset: 1e9, minutes: 60).offset == olderChart.totalDuration - 3600)
         check("An empty chart has no series", TokenChart(samples: [], now: tokenNow, offset: 0, minutes: 60).series.isEmpty)
-        session.tokenSamples = [tokenSample, history, continuous]
+        session.tokenSamples = [tokenSample, history, continuous, secondModel]
         root.tokens.setSessions([session])
         root.tokensButton.performClick(nil); root.update(); root.layoutSubtreeIfNeeded()
         check("The token tab opens its chart", !root.tokens.isHidden)
@@ -164,7 +167,22 @@ import AppKit
         check("Model filters remove other models", root.tokens.canvas.chart?.series.allSatisfy { $0.contains("gpt") } == true)
         root.tokens.model.selectItem(at: 0); root.tokens.effort.selectItem(withTitle: "low"); root.tokens.refresh()
         check("Effort filters remove other efforts", root.tokens.canvas.chart?.series.allSatisfy { $0.hasSuffix("low") } == true)
-        root.tokens.effort.selectItem(at: 0); root.tokens.refresh(); root.tokens.page(1)
+        root.tokens.effort.selectItem(at: 0); root.tokens.refresh()
+        let legendButton = root.tokens.legendButtons[1]
+        root.tokens.refresh()
+        check("Refreshing keeps legend buttons available", root.tokens.legendButtons[1] === legendButton)
+        let allSeries = root.tokens.canvas.chart!.series
+        let firstSeries = allSeries[0]
+        let chartTime = root.tokens.canvas.chart!.time(at: 0)
+        root.tokens.legendButtons[1].performClick(nil)
+        check("Clicking the legend shows one line", root.tokens.canvas.shownColumns.count == 1)
+        check("The legend shows the clicked series", root.tokens.canvas.chart!.series[root.tokens.canvas.shownColumns[0]] == firstSeries)
+        check("Isolating a line keeps the time period", abs(root.tokens.canvas.chart!.time(at: 0) - chartTime) < 1000)
+        root.tokens.legendButtons[1].performClick(nil)
+        check("Clicking the selected legend item restores all lines", root.tokens.canvas.shownColumns.count == allSeries.count)
+        root.tokens.legendButtons[2].performClick(nil); root.tokens.legendButtons[0].performClick(nil)
+        check("Show all restores all lines", root.tokens.canvas.selectedSeries == nil)
+        root.tokens.page(1)
         check("Older pages move away from now", root.tokens.offset > 0)
         root.tokens.now.performClick(nil)
         check("Now returns to the newest page", root.tokens.offset == 0)
