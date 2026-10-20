@@ -32,7 +32,7 @@ final class SessionsContent: FlippedView {
     let sidebar = SidebarView(frame: .zero), transcript = TranscriptPane(frame: .zero)
     let timeline = TimelinePane(frame: .zero)
     let tokens = TokensPane(frame: .zero)
-    let tokensButton = ActionButton("Tokens / sec", size: 13)
+    let tokensButton = ActionButton("TPS", size: 13)
     let sessionsButton = ActionButton("Sessions", size: 13), timelineButton = ActionButton("Timeline", size: 13)
     private var cancellables = Set<AnyCancellable>()
     private var scheduled = false

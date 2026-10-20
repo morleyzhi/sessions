@@ -150,7 +150,7 @@ final class TokensPane: FlippedView {
         for view in [canvas, harness, model, effort, period, newer, older, now, range, note, legendScroll] { addSubview(view) }
         for popup in [harness, model, effort, period] { popup.font = .systemFont(ofSize: 12); popup.target = self; popup.action = #selector(changeFilter(_:)) }
         for (popup, title) in [(harness, "All harnesses"), (model, "All models"), (effort, "All efforts")] { popup.addItem(withTitle: title); popup.setAccessibilityLabel(title) }
-        period.addItems(withTitles: ["1 hour / screen", "2 hours / screen", "4 hours / screen", "8 hours / screen", "12 hours / screen", "1 day / screen"])
+        period.addItems(withTitles: ["1 hr", "2 hr", "4 hr", "8 hr", "12 hr", "24 hr"])
         period.setAccessibilityLabel("Active time per screen")
         newer.actionBlock = { [weak self] in self?.page(-1) }; older.actionBlock = { [weak self] in self?.page(1) }
         now.actionBlock = { [weak self] in self?.offset = 0; self?.referenceNow = nil; self?.refresh() }
