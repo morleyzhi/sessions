@@ -25,7 +25,7 @@ struct TokenChart {
         self.scale = scale; self.duration = duration; self.totalDuration = totalDuration; self.offset = offset
         let smoothingMinutes = [60: 2, 120: 3, 240: 5, 480: 8, 720: 10, 1440: 15][minutes] ?? 2
         self.smoothingMinutes = smoothingMinutes
-        let halfWindow = Double(smoothingMinutes) * 30000
+        let windowDuration = Double(smoothingMinutes) * 60000
         let step = duration / Double(count)
         var breaks = Array(repeating: false, count: count)
         var windows = Array(repeating: (0.0, 0.0), count: count)
@@ -36,8 +36,8 @@ struct TokenChart {
             let position = (left + right) / 2
             if !breaks[index], let segment = scale.segments.first(where: { !$0.gap && position >= $0.top && position < $0.bottom }) {
                 let time = scale.time(at: position)
-                windows[index] = (max(segment.older, time - halfWindow), min(segment.newer, time + halfWindow))
-                trendWindows[index] = (max(segment.older, time - halfWindow * 5), min(segment.newer, time + halfWindow * 5))
+                windows[index] = (max(segment.older, time - windowDuration), time)
+                trendWindows[index] = (max(segment.older, time - windowDuration * 5), time)
             }
         }
         gaps = Array(breaks.reversed())
@@ -186,7 +186,7 @@ final class TokensCanvas: FlippedView {
         let index = min(chart.values.count - 1, max(0, Int(fraction * Double(chart.values.count))))
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
-        lines.append("\(chart.smoothingMinutes) min average · Active seconds only")
+        lines.append("\(chart.smoothingMinutes) min trailing average · Active seconds only")
         lines.append(String(format: "Total: %.1f output TPS", shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }))
         for column in shownColumns { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
         if let column = trendColumn { lines.append(String(format: "Dashed %d min average: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
