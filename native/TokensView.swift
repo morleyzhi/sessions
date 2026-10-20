@@ -8,6 +8,7 @@ struct TokenChart {
     let values: [[Double]]
     let gaps: [Bool]
     let totalDuration: Double
+    let smoothingMinutes: Int
     var maximum: Double { max(1, values.map { $0.reduce(0, +) }.max() ?? 0) }
     init(samples: [TokenSample], now: Double, offset: Double, minutes: Int, count: Int = 400) {
         let samples = samples.filter { $0.end > $0.start && $0.tokens > 0 && $0.end <= now }
@@ -20,26 +21,34 @@ struct TokenChart {
         let totalDuration = scale.segments.last?.bottom ?? duration
         let offset = min(max(0, offset), max(0, totalDuration - duration))
         self.scale = scale; self.duration = duration; self.totalDuration = totalDuration; self.offset = offset
+        let smoothingMinutes = [60: 2, 120: 3, 240: 5, 480: 8, 720: 10, 1440: 15][minutes] ?? 2
+        self.smoothingMinutes = smoothingMinutes
+        let halfWindow = Double(smoothingMinutes) * 30000
         let step = duration / Double(count)
         var breaks = Array(repeating: false, count: count)
+        var windows = Array(repeating: (0.0, 0.0), count: count)
         for index in 0..<count {
-            let position = offset + (Double(index) + 0.5) * step
-            breaks[index] = scale.segments.contains { $0.gap && position >= $0.top && position < $0.bottom }
+            let left = offset + Double(index) * step, right = left + step
+            breaks[index] = scale.segments.contains { $0.gap && left < $0.bottom && right > $0.top }
+            let position = (left + right) / 2
+            if !breaks[index], let segment = scale.segments.first(where: { !$0.gap && position >= $0.top && position < $0.bottom }) {
+                let time = scale.time(at: position)
+                windows[index] = (max(segment.older, time - halfWindow), min(segment.newer, time + halfWindow))
+            }
         }
         gaps = breaks
-        let visible = samples.filter { scale.y(at: $0.end) < offset + duration && scale.y(at: $0.start) > offset }
+        let oldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
+        let newest = windows.map { $0.1 }.max() ?? now
+        let visible = samples.filter { $0.end > oldest && $0.start < newest }
         series = Set(visible.map(\.series)).sorted()
         let indices = Dictionary(uniqueKeysWithValues: series.enumerated().map { ($0.element, $0.offset) })
         var values = Array(repeating: Array(repeating: 0.0, count: series.count), count: count)
+        // Average each series over real elapsed time, stopping at skipped inactivity.
         for sample in visible {
-            let left = max(0, scale.y(at: sample.end) - offset)
-            let right = min(duration, scale.y(at: sample.start) - offset)
-            guard right > left, let column = indices[sample.series] else { continue }
-            let first = max(0, Int(floor(left / step))), last = min(count - 1, Int(ceil(right / step)) - 1)
-            guard first <= last else { continue }
-            for index in first...last where !breaks[index] {
-                let overlap = max(0, min(right, Double(index + 1) * step) - max(left, Double(index) * step))
-                values[index][column] += sample.rate * overlap / step
+            guard let column = indices[sample.series] else { continue }
+            for (index, window) in windows.enumerated() where window.1 > window.0 {
+                let overlap = max(0, min(sample.end, window.1) - max(sample.start, window.0))
+                values[index][column] += sample.rate * overlap / (window.1 - window.0)
             }
         }
         self.values = values
@@ -52,7 +61,9 @@ final class TokensCanvas: FlippedView {
     private let tooltip = TimelineTooltip()
     private var tracking: NSTrackingArea?
     var plot: NSRect { NSRect(x: 65, y: 28, width: max(1, bounds.width - 90), height: max(1, bounds.height - 88)) }
-    static func color(_ name: String) -> NSColor {
+    var seriesColors: [String: NSColor] = [:]
+    func color(_ name: String) -> NSColor {
+        if let color = seriesColors[name] { return color }
         let hash = name.utf8.reduce(UInt64(5381)) { ($0 &* 33) &+ UInt64($1) }
         return NSColor(calibratedHue: CGFloat(hash % 360) / 360, saturation: 0.56, brightness: 0.9, alpha: 1)
     }
@@ -75,7 +86,7 @@ final class TokensCanvas: FlippedView {
         var lower = Array(repeating: 0.0, count: chart.values.count)
         for (column, name) in chart.series.enumerated() {
             let upper = chart.values.enumerated().map { lower[$0.offset] + $0.element[column] }
-            let color = Self.color(name)
+            let color = color(name)
             var first = 0
             while first < upper.count {
                 if chart.gaps[first] { first += 1; continue }
@@ -89,7 +100,7 @@ final class TokensCanvas: FlippedView {
                 for index in (first + 1)..<end { fill.line(to: point(index, upper)); line.line(to: point(index, upper)) }
                 for index in (first..<end).reversed() { fill.line(to: point(index, lower)) }
                 fill.close(); color.withAlphaComponent(0.16).setFill(); fill.fill()
-                color.setStroke(); line.lineWidth = 1.5; line.stroke(); first = end
+                color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke(); first = end
             }
             lower = upper
         }
@@ -127,6 +138,7 @@ final class TokensCanvas: FlippedView {
         let index = min(chart.values.count - 1, max(0, Int(fraction * Double(chart.values.count))))
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
+        lines.append("\(chart.smoothingMinutes) min moving average")
         lines.append(String(format: "Total: %.1f output TPS", chart.values[index].reduce(0, +)))
         for (column, name) in chart.series.enumerated() { lines.append(String(format: "%@: %.1f TPS", name, chart.values[index][column])) }
         tooltip.show(lines.joined(separator: "\n"), in: window)
@@ -138,7 +150,7 @@ final class TokensPane: FlippedView {
     let harness = NSPopUpButton(), model = NSPopUpButton(), effort = NSPopUpButton(), period = NSPopUpButton()
     let newer = ActionButton("← Newer"), older = ActionButton("Older →"), now = ActionButton("Now")
     let range = label("", size: 12, color: Theme.muted)
-    let note = label("Output tokens averaged over recorded intervals · Cursor has no timed usage", size: 11, color: Theme.muted)
+    let note = label("", size: 11, color: Theme.muted)
     let legend = NSTextView(), legendScroll = NSScrollView()
     let minutes = [60, 120, 240, 480, 720, 1440]
     private(set) var offset = 0.0
@@ -163,6 +175,12 @@ final class TokensPane: FlippedView {
     deinit { timer?.invalidate() }
     func setSessions(_ sessions: [Session]) {
         samples = sessions.flatMap { $0.tokenSamples ?? [] }
+        let colors = [0x72b7ff, 0xffb86b, 0x75d9b0, 0xd8a0ff, 0xff8297, 0xe1d56c, 0x73d6e6, 0xb8c3ff]
+        var seen = Set<String>()
+        let names = samples.sorted { $0.end > $1.end }.map(\.series).filter { seen.insert($0).inserted }
+        canvas.seriesColors = Dictionary(uniqueKeysWithValues: names.enumerated().map { index, name in
+            (name, index < colors.count ? rgb(colors[index]) : NSColor(calibratedHue: (CGFloat(index) * 0.618034).truncatingRemainder(dividingBy: 1), saturation: 0.5, brightness: 0.95, alpha: 1))
+        })
         for (popup, values) in [(harness, Set(samples.map(\.harness))), (model, Set(samples.map(\.model))), (effort, Set(samples.map(\.effort)))] {
             let selected = popup.indexOfSelectedItem > 0 ? popup.titleOfSelectedItem : nil
             let title = popup.itemTitle(at: 0)
@@ -187,12 +205,13 @@ final class TokensPane: FlippedView {
         }
         let chart = TokenChart(samples: filtered, now: referenceNow ?? Date().timeIntervalSince1970 * 1000, offset: offset, minutes: minutes[period.indexOfSelectedItem])
         offset = chart.offset; canvas.chart = chart
+        note.stringValue = "\(chart.smoothingMinutes) min moving average · Output TPS · Cursor has no timed usage"
         newer.isEnabled = offset > 0; older.isEnabled = !filtered.isEmpty && offset + chart.duration < chart.totalDuration
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d, HH:mm"
         range.stringValue = formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 0) / 1000)) + "  →  " + formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 1) / 1000))
         let text = NSMutableAttributedString()
         for name in chart.series {
-            text.append(attributed("● ", size: 12, color: TokensCanvas.color(name)))
+            text.append(attributed("● ", size: 12, color: canvas.color(name)))
             text.append(attributed(name + "    ", size: 11, color: Theme.muted))
         }
         legend.textStorage?.setAttributedString(text); needsLayout = true
