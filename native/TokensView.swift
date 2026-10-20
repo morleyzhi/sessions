@@ -58,8 +58,12 @@ struct TokenChart {
 
 final class TokensCanvas: FlippedView {
     var chart: TokenChart? { didSet { needsDisplay = true } }
+    var stacked = true { didSet { needsDisplay = true } }
     var selectedSeries: String? { didSet { needsDisplay = true } }
     var shownColumns: [Int] { chart.map { chart in chart.series.indices.filter { selectedSeries == nil || chart.series[$0] == selectedSeries } } ?? [] }
+    var maximumRate: Double {
+        chart?.values.map { row in stacked ? shownColumns.reduce(0.0) { $0 + row[$1] } : shownColumns.map { row[$0] }.max() ?? 0 }.max() ?? 0
+    }
     private let tooltip = TimelineTooltip()
     private var tracking: NSTrackingArea?
     var plot: NSRect { NSRect(x: 65, y: 28, width: max(1, bounds.width - 90), height: max(1, bounds.height - 88)) }
@@ -71,16 +75,15 @@ final class TokensCanvas: FlippedView {
     }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Stacked output tokens per second. Newest time is on the right.")
+        setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Output tokens per second. Newest time is on the right.")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     override func draw(_ dirtyRect: NSRect) {
         Theme.background.setFill(); bounds.fill()
         guard let chart else { return }
         let columns = shownColumns
-        let total = chart.values.map { row in columns.reduce(0.0) { $0 + row[$1] } }.max() ?? 0
-        let rect = plot, maximum = max(10, ceil(total / 10) * 10)
-        drawText(selectedSeries == nil ? "STACKED TPS" : "OUTPUT TPS", in: NSRect(x: 12, y: 2, width: 150, height: 18), size: 10, color: Theme.muted)
+        let rect = plot, maximum = max(10, ceil(maximumRate / 10) * 10)
+        drawText(stacked && selectedSeries == nil ? "STACKED TPS" : "OUTPUT TPS", in: NSRect(x: 12, y: 2, width: 150, height: 18), size: 10, color: Theme.muted)
         for tick in 0...4 {
             let value = maximum * Double(tick) / 4, y = rect.maxY - rect.height * Double(tick) / 4
             Theme.border.setFill(); NSRect(x: rect.minX, y: y, width: rect.width, height: 1).fill()
@@ -108,10 +111,10 @@ final class TokensCanvas: FlippedView {
                     else { line.move(to: point(index, upper)) }
                 }
                 for index in (first..<end).reversed() { fill.line(to: point(index, lower)) }
-                fill.close(); color.withAlphaComponent(0.32).setFill(); fill.fill()
+                if stacked { fill.close(); color.withAlphaComponent(0.32).setFill(); fill.fill() }
                 color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke(); first = end
             }
-            lower = upper
+            if stacked { lower = upper }
         }
         for segment in chart.scale.segments where segment.gap {
             let width = max(5, (segment.bottom - segment.top) / chart.duration * rect.width)
@@ -158,6 +161,7 @@ final class TokensPane: FlippedView {
     let canvas = TokensCanvas(frame: .zero)
     let harness = NSPopUpButton(), model = NSPopUpButton(), effort = NSPopUpButton(), period = NSPopUpButton()
     let newer = ActionButton("Newer →"), older = ActionButton("← Older"), now = ActionButton("Now")
+    let stacked = NSButton(checkboxWithTitle: "Stacked", target: nil, action: nil)
     let range = label("", size: 12, color: Theme.muted)
     let note = label("", size: 11, color: Theme.muted)
     let legend = FlippedView(), legendScroll = NSScrollView()
@@ -169,11 +173,14 @@ final class TokensPane: FlippedView {
     private var timer: Timer?
     override init(frame: NSRect) {
         super.init(frame: frame)
-        for view in [canvas, harness, model, effort, period, newer, older, now, range, note, legendScroll] { addSubview(view) }
+        for view in [canvas, harness, model, effort, period, newer, older, now, stacked, range, note, legendScroll] { addSubview(view) }
         for popup in [harness, model, effort, period] { popup.font = .systemFont(ofSize: 12); popup.target = self; popup.action = #selector(changeFilter(_:)) }
         for (popup, title) in [(harness, "All harnesses"), (model, "All models"), (effort, "All efforts")] { popup.addItem(withTitle: title); popup.setAccessibilityLabel(title) }
         period.addItems(withTitles: ["1 hr", "2 hr", "4 hr", "8 hr", "12 hr", "24 hr"])
         period.setAccessibilityLabel("Active time per screen")
+        stacked.font = .systemFont(ofSize: 12); stacked.contentTintColor = Theme.accent
+        stacked.state = UserDefaults.standard.object(forKey: "tps-stacked") as? Bool == false ? .off : .on
+        stacked.target = self; stacked.action = #selector(toggleStacked)
         newer.actionBlock = { [weak self] in self?.page(-1) }; older.actionBlock = { [weak self] in self?.page(1) }
         now.actionBlock = { [weak self] in self?.offset = 0; self?.referenceNow = nil; self?.refresh() }
         legendScroll.documentView = legend; legendScroll.hasVerticalScroller = true; legendScroll.drawsBackground = false; legendScroll.autohidesScrollers = true
@@ -204,6 +211,10 @@ final class TokensPane: FlippedView {
         if offset <= 0 { referenceNow = nil }
         refresh()
     }
+    @objc private func toggleStacked() {
+        UserDefaults.standard.set(stacked.state == .on, forKey: "tps-stacked")
+        refresh()
+    }
     func stepZoom(_ direction: Int) { period.selectItem(at: min(minutes.count - 1, max(0, period.indexOfSelectedItem + direction))); refresh() }
     @objc private func changeFilter(_ sender: NSPopUpButton) { if sender !== period { offset = 0; referenceNow = nil }; refresh() }
     func refresh() {
@@ -213,9 +224,10 @@ final class TokensPane: FlippedView {
             (effort.indexOfSelectedItem == 0 || sample.effort == effort.titleOfSelectedItem)
         }
         let chart = TokenChart(samples: filtered, now: referenceNow ?? Date().timeIntervalSince1970 * 1000, offset: offset, minutes: minutes[period.indexOfSelectedItem])
-        offset = chart.offset; canvas.chart = chart
+        offset = chart.offset; canvas.chart = chart; canvas.stacked = stacked.state == .on
         if let selected = canvas.selectedSeries, !chart.series.contains(selected) { canvas.selectedSeries = nil }
-        note.stringValue = "\(chart.smoothingMinutes) min moving average · Colored bands stack to total TPS · Click a legend item to show it alone"
+        let description = canvas.stacked ? "Colored bands stack to total TPS" : "Each line shows its own TPS"
+        note.stringValue = "\(chart.smoothingMinutes) min moving average · \(description) · Click a legend item to show it alone"
         newer.isEnabled = offset > 0; older.isEnabled = !filtered.isEmpty && offset + chart.duration < chart.totalDuration
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d, HH:mm"
         range.stringValue = formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 0) / 1000)) + "  →  " + formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 1) / 1000))
@@ -250,7 +262,8 @@ final class TokensPane: FlippedView {
         for (index, popup) in [harness, model, effort].enumerated() { popup.frame = NSRect(x: 20 + Double(index) * (width + 10), y: 12, width: width, height: 28) }
         period.frame = NSRect(x: bounds.width - 200, y: 12, width: 180, height: 28)
         older.frame = NSRect(x: 20, y: 52, width: 85, height: 28); now.frame = NSRect(x: 113, y: 52, width: 55, height: 28); newer.frame = NSRect(x: 176, y: 52, width: 85, height: 28)
-        range.frame = NSRect(x: 278, y: 58, width: max(0, bounds.width - 298), height: 20)
+        range.frame = NSRect(x: 278, y: 58, width: max(0, bounds.width - 410), height: 20)
+        stacked.frame = NSRect(x: bounds.width - 112, y: 55, width: 92, height: 24)
         note.frame = NSRect(x: 20, y: 92, width: max(0, bounds.width - 40), height: 20)
         canvas.frame = NSRect(x: 0, y: 122, width: bounds.width, height: max(0, bounds.height - 206))
         legendScroll.frame = NSRect(x: 65, y: max(122, bounds.height - 78), width: max(0, bounds.width - 90), height: 65)

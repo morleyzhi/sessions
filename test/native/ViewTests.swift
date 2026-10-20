@@ -129,6 +129,10 @@ import AppKit
         var secondModel = tokenSample; secondModel.model = "second"; secondModel.tokens = 4800
         let combined = TokenChart(samples: [tokenSample, secondModel], now: tokenNow, offset: 0, minutes: 60)
         check("Different models stack to their combined rate", abs(combined.maximum - 30) < 0.001)
+        let comparison = TokensCanvas(frame: .zero); comparison.chart = combined
+        check("Stacked charts use the combined rate for the axis", abs(comparison.maximumRate - 30) < 0.001)
+        comparison.stacked = false
+        check("Unstacked charts use the largest individual rate for the axis", abs(comparison.maximumRate - 20) < 0.001)
         check("The chart shows now on the right", chart.time(at: 1) == tokenNow)
         check("Older times appear on the left", chart.time(at: 0) < chart.time(at: 1))
         check("Recent token output appears on the right", chart.values.last?[0] == 20)
@@ -184,6 +188,11 @@ import AppKit
         check("Clicking the selected legend item restores all lines", root.tokens.canvas.shownColumns.count == allSeries.count)
         root.tokens.legendButtons[2].performClick(nil); root.tokens.legendButtons[0].performClick(nil)
         check("Show all restores all lines", root.tokens.canvas.selectedSeries == nil)
+        if root.tokens.stacked.state == .off { root.tokens.stacked.performClick(nil) }
+        root.tokens.stacked.performClick(nil)
+        check("Clearing Stacked draws individual lines", !root.tokens.canvas.stacked)
+        root.tokens.stacked.performClick(nil)
+        check("Selecting Stacked restores stacked bands", root.tokens.canvas.stacked)
         root.tokens.page(1)
         check("Older pages move away from now", root.tokens.offset > 0)
         root.tokens.now.performClick(nil)
