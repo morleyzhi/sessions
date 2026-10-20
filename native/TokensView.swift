@@ -36,7 +36,7 @@ struct TokenChart {
                 windows[index] = (max(segment.older, time - halfWindow), min(segment.newer, time + halfWindow))
             }
         }
-        gaps = breaks
+        gaps = Array(breaks.reversed())
         let oldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
         let newest = windows.map { $0.1 }.max() ?? now
         let visible = samples.filter { $0.end > oldest && $0.start < newest }
@@ -51,9 +51,9 @@ struct TokenChart {
                 values[index][column] += sample.rate * overlap / (window.1 - window.0)
             }
         }
-        self.values = values
+        self.values = Array(values.reversed())
     }
-    func time(at fraction: Double) -> Double { scale.time(at: offset + duration * fraction) }
+    func time(at fraction: Double) -> Double { scale.time(at: offset + duration * (1 - fraction)) }
 }
 
 final class TokensCanvas: FlippedView {
@@ -71,7 +71,7 @@ final class TokensCanvas: FlippedView {
     }
     override init(frame: NSRect) {
         super.init(frame: frame)
-        setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Stacked output tokens per second. Newest time is on the left.")
+        setAccessibilityElement(true); setAccessibilityRole(.image); setAccessibilityLabel("Stacked output tokens per second. Newest time is on the right.")
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
     override func draw(_ dirtyRect: NSRect) {
@@ -114,8 +114,8 @@ final class TokensCanvas: FlippedView {
             lower = upper
         }
         for segment in chart.scale.segments where segment.gap {
-            let x = rect.minX + (segment.top - chart.offset) / chart.duration * rect.width
             let width = max(5, (segment.bottom - segment.top) / chart.duration * rect.width)
+            let x = rect.maxX - (segment.top - chart.offset) / chart.duration * rect.width - width
             guard x + width >= rect.minX && x < rect.maxX else { continue }
             Theme.panel.setFill(); NSRect(x: x, y: rect.minY, width: width, height: rect.height).fill()
             drawText("↯", in: NSRect(x: x, y: rect.midY - 10, width: 22, height: 20), size: 12, color: Theme.muted)
@@ -124,10 +124,10 @@ final class TokensCanvas: FlippedView {
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d HH:mm"
         for index in 0...4 {
             let fraction = Double(index) / 4, time = chart.time(at: fraction)
-            let text = index == 0 && chart.offset == 0 ? "Now" : formatter.string(from: Date(timeIntervalSince1970: time / 1000))
+            let text = index == 4 && chart.offset == 0 ? "Now" : formatter.string(from: Date(timeIntervalSince1970: time / 1000))
             drawText(text, in: NSRect(x: min(rect.maxX - 110, max(rect.minX, rect.minX + fraction * rect.width - 50)), y: rect.maxY + 12, width: 118, height: 20), size: 11, color: Theme.muted)
         }
-        drawText("TIME → OLDER    ·    ↯ inactivity skipped", in: NSRect(x: rect.minX, y: rect.maxY + 36, width: 400, height: 18), size: 10, color: Theme.muted)
+        drawText("TIME → NEWER    ·    ↯ inactivity skipped", in: NSRect(x: rect.minX, y: rect.maxY + 36, width: 400, height: 18), size: 10, color: Theme.muted)
         if chart.series.isEmpty { drawText("No timed token usage in this period", in: NSRect(x: rect.midX - 160, y: rect.midY, width: 350, height: 24), size: 14, color: Theme.muted) }
     }
     override func updateTrackingAreas() {
@@ -140,7 +140,7 @@ final class TokensCanvas: FlippedView {
         let point = convert(event.locationInWindow, from: nil)
         guard plot.contains(point), let chart, let window else { hideTooltip(); return }
         let fraction = (point.x - plot.minX) / plot.width
-        let position = chart.offset + fraction * chart.duration
+        let position = chart.offset + (1 - fraction) * chart.duration
         if let gap = chart.scale.segments.first(where: { $0.gap && position >= $0.top && position <= $0.bottom }) {
             tooltip.show("\(Int((gap.newer - gap.older) / 60000)) minutes of inactivity skipped", in: window); return
         }
@@ -157,7 +157,7 @@ final class TokensCanvas: FlippedView {
 final class TokensPane: FlippedView {
     let canvas = TokensCanvas(frame: .zero)
     let harness = NSPopUpButton(), model = NSPopUpButton(), effort = NSPopUpButton(), period = NSPopUpButton()
-    let newer = ActionButton("← Newer"), older = ActionButton("Older →"), now = ActionButton("Now")
+    let newer = ActionButton("Newer →"), older = ActionButton("← Older"), now = ActionButton("Now")
     let range = label("", size: 12, color: Theme.muted)
     let note = label("", size: 11, color: Theme.muted)
     let legend = FlippedView(), legendScroll = NSScrollView()
@@ -249,7 +249,7 @@ final class TokensPane: FlippedView {
         let width = max(120, (bounds.width - 40 - 180 - 30) / 3)
         for (index, popup) in [harness, model, effort].enumerated() { popup.frame = NSRect(x: 20 + Double(index) * (width + 10), y: 12, width: width, height: 28) }
         period.frame = NSRect(x: bounds.width - 200, y: 12, width: 180, height: 28)
-        newer.frame = NSRect(x: 20, y: 52, width: 85, height: 28); now.frame = NSRect(x: 113, y: 52, width: 55, height: 28); older.frame = NSRect(x: 176, y: 52, width: 85, height: 28)
+        older.frame = NSRect(x: 20, y: 52, width: 85, height: 28); now.frame = NSRect(x: 113, y: 52, width: 55, height: 28); newer.frame = NSRect(x: 176, y: 52, width: 85, height: 28)
         range.frame = NSRect(x: 278, y: 58, width: max(0, bounds.width - 298), height: 20)
         note.frame = NSRect(x: 20, y: 92, width: max(0, bounds.width - 40), height: 20)
         canvas.frame = NSRect(x: 0, y: 122, width: bounds.width, height: max(0, bounds.height - 206))
