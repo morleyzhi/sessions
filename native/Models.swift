@@ -88,6 +88,17 @@ struct TimelineRow: Codable, Identifiable, Equatable {
     var sessionKey = ""
     var id: String { "\(sessionKey):\(messageIndex)" }
 }
+struct TokenSample: Codable, Equatable {
+    var start: Double
+    var end: Double
+    var tokens: Int
+    var harness: String
+    var model: String
+    var effort: String
+    var series: String { "\(harness.capitalized) · \(model) · \(effort)" }
+    var rate: Double { Double(tokens) / ((end - start) / 1000) }
+}
+
 struct Session: Codable, Identifiable, Equatable {
     var id: String
     var tool: String
@@ -101,6 +112,7 @@ struct Session: Codable, Identifiable, Equatable {
     var searchText: String
     var fingerprint = ""
     var timeline: [TimelineRow] = []
+    var tokenSamples: [TokenSample]? = nil
     var untimed = 0
     var prTitles: [String: String] = [:]
     var messages: [Message] = []

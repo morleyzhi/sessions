@@ -42,7 +42,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window.center()
         buildMenu()
         keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            guard let self, event.window === self.window, self.content.store.mode == "Timeline",
+            guard let self, event.window === self.window, ["Timeline", "Tokens"].contains(self.content.store.mode),
                   !event.modifierFlags.contains(.option), !event.modifierFlags.intersection([.command, .control]).isEmpty else { return event }
             let key = event.charactersIgnoringModifiers ?? ""
             let direction = ["+", "="].contains(key) ? -1 : key == "-" ? 1 : 0

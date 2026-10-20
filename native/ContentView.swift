@@ -31,6 +31,8 @@ final class SessionsContent: FlippedView {
     let store: SessionStore
     let sidebar = SidebarView(frame: .zero), transcript = TranscriptPane(frame: .zero)
     let timeline = TimelinePane(frame: .zero)
+    let tokens = TokensPane(frame: .zero)
+    let tokensButton = ActionButton("Tokens / sec", size: 13)
     let sessionsButton = ActionButton("Sessions", size: 13), timelineButton = ActionButton("Timeline", size: 13)
     private var cancellables = Set<AnyCancellable>()
     private var scheduled = false
@@ -40,9 +42,10 @@ final class SessionsContent: FlippedView {
     init(store: SessionStore) {
         self.store = store
         super.init(frame: .zero)
-        for view in [sidebar, transcript, timeline, sessionsButton, timelineButton] { addSubview(view) }
-        for button in [sessionsButton, timelineButton] { button.showBorder = false; button.hoverStyle = false; button.fill = Theme.background; button.radius = 5 }
+        for view in [sidebar, transcript, timeline, tokens, sessionsButton, timelineButton, tokensButton] { addSubview(view) }
+        for button in [sessionsButton, timelineButton, tokensButton] { button.showBorder = false; button.hoverStyle = false; button.fill = Theme.background; button.radius = 5 }
         sessionsButton.actionBlock = { [weak self] in self?.store.mode = "Sessions" }
+        tokensButton.actionBlock = { [weak self] in self?.store.mode = "Tokens" }
         timelineButton.actionBlock = { [weak self] in self?.store.mode = "Timeline" }
         sidebar.query.changed = { [weak self] in self?.store.query = $0 }
         for (index, button) in sidebar.filters.enumerated() {
@@ -65,12 +68,14 @@ final class SessionsContent: FlippedView {
         DispatchQueue.main.async { [weak self] in self?.scheduled = false; self?.update() }
     }
     func update() {
-        let mode = store.mode == "Timeline"
-        sidebar.isHidden = mode; transcript.isHidden = mode; timeline.isHidden = !mode
-        if !mode { timeline.hideTooltip() }
-        sessionsButton.active = !mode; timelineButton.active = mode
-        sessionsButton.ink = mode ? Theme.muted : Theme.text; timelineButton.ink = mode ? Theme.text : Theme.muted
-        sessionsButton.needsDisplay = true; timelineButton.needsDisplay = true
+        let mode = store.mode
+        sidebar.isHidden = mode != "Sessions"; transcript.isHidden = mode != "Sessions"
+        timeline.isHidden = mode != "Timeline"; tokens.isHidden = mode != "Tokens"
+        if mode != "Timeline" { timeline.hideTooltip() }
+        if mode != "Tokens" { tokens.canvas.hideTooltip() }
+        for (button, name) in [(sessionsButton, "Sessions"), (timelineButton, "Timeline"), (tokensButton, "Tokens")] {
+            button.active = mode == name; button.ink = button.active ? Theme.text : Theme.muted; button.needsDisplay = true
+        }
         let terms = queryTerms(store.query), pins = Set(store.pins)
         let rows = store.visible.sorted { $0.updatedAt > $1.updatedAt }
         sidebar.pinned.apply(rows.filter { pins.contains($0.key) }, terms: terms, live: store.live, selected: store.selectedKey)
@@ -81,7 +86,7 @@ final class SessionsContent: FlippedView {
         }
         if let detail = store.detail { transcript.show(detail, live: store.live.contains(detail.key)) }
         else { transcript.show(nil, live: false, message: !store.detailError.isEmpty ? "Could not read this session" : store.selectedKey == nil ? "Select a session" : "Loading…") }
-        if lastTimelineSessions != store.sessions { lastTimelineSessions = store.sessions; timeline.setSessions(store.sessions) }
+        if lastTimelineSessions != store.sessions { lastTimelineSessions = store.sessions; timeline.setSessions(store.sessions); tokens.setSessions(store.sessions) }
         if let index = store.jumpToMessage, let key = store.detail?.key {
             let jump = "\(key):\(index)"
             if jump != lastJump { lastJump = jump; DispatchQueue.main.async { [weak self] in self?.transcript.jump(to: index) } }
@@ -90,20 +95,22 @@ final class SessionsContent: FlippedView {
     }
     override func layout() {
         super.layout()
-        sessionsButton.frame = NSRect(x: bounds.midX - 98, y: 11, width: 96, height: 26)
-        timelineButton.frame = NSRect(x: bounds.midX - 2, y: 11, width: 100, height: 26)
+        sessionsButton.frame = NSRect(x: bounds.midX - 158, y: 11, width: 96, height: 26)
+        timelineButton.frame = NSRect(x: bounds.midX - 62, y: 11, width: 100, height: 26)
+        tokensButton.frame = NSRect(x: bounds.midX + 38, y: 11, width: 120, height: 26)
+        tokens.frame = NSRect(x: 0, y: 48, width: bounds.width, height: max(0, bounds.height - 48))
         sidebar.frame = NSRect(x: 0, y: 48, width: 380, height: max(0, bounds.height - 48)); sidebar.needsLayout = true
         transcript.frame = NSRect(x: 380, y: 48, width: max(0, bounds.width - 380), height: max(0, bounds.height - 48))
         timeline.frame = NSRect(x: 0, y: 48, width: bounds.width, height: max(0, bounds.height - 48))
     }
-    override func draw(_ dirtyRect: NSRect) { Theme.background.setFill(); bounds.fill(); rounded(NSRect(x: bounds.midX - 102, y: 7, width: 204, height: 34), 8, fill: Theme.background, border: Theme.border) }
+    override func draw(_ dirtyRect: NSRect) { Theme.background.setFill(); bounds.fill(); rounded(NSRect(x: bounds.midX - 162, y: 7, width: 324, height: 34), 8, fill: Theme.background, border: Theme.border) }
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         if point.y < 48 { if event.clickCount == 2 { window?.performZoom(nil) } else { window?.performDrag(with: event) } }
         else { super.mouseDown(with: event) }
     }
-    func focusFind() { if store.detail != nil && store.mode != "Timeline" { transcript.header.find.focus() } else { sidebar.query.focus() } }
-    func zoom(_ direction: Int) { if store.mode == "Timeline" { timeline.stepZoom(direction) } }
+    func focusFind() { if store.detail != nil && store.mode == "Sessions" { transcript.header.find.focus() } else { sidebar.query.focus() } }
+    func zoom(_ direction: Int) { if store.mode == "Timeline" { timeline.stepZoom(direction) }; if store.mode == "Tokens" { tokens.stepZoom(direction) } }
     private func contextMenu(_ session: Session) -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false; menuActions = []
         func item(_ title: String, _ enabled: Bool = true, _ action: @escaping () -> Void) {

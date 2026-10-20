@@ -70,6 +70,15 @@ final class TranscriptReader {
         var sidechain = false, guardian = false
         var messages: [Message] = []
         var prTitles: [String: String] = [:]
+        var tokenSamples: [TokenSample] = []
+        var generationStart: Double?
+        var model = "Unknown model", effort = "Unknown effort"
+        var totalOutput = 0
+        var claudeUsage: [String: Int] = [:]
+        func recordUsage(_ tokens: Int, _ stamp: Double?) {
+            guard tokens > 0, let end = stamp, let start = generationStart, end > start, end - start <= 30 * 60000 else { return }
+            tokenSamples.append(TokenSample(start: start, end: end, tokens: tokens, harness: tool, model: model, effort: effort))
+        }
         if tool == "cursor" {
             let meta = jsonFile(path + "/meta.json")
             title = meta["title"] as? String ?? ""; cwd = meta["cwd"] as? String ?? ""
@@ -84,6 +93,23 @@ final class TranscriptReader {
                     if let stamp { started = min(started ?? stamp, stamp); updated = max(updated ?? stamp, stamp) }
                     if data.range(of: Data("github.com/".utf8)) != nil || (data.range(of: Data("title".utf8)) != nil && data.range(of: Data("number".utf8)) != nil) { collectPRTitles(event, &prTitles) }
                     if tool == "claude" {
+                        let message = event["message"] as? [String: Any] ?? [:]
+                        if type == "user", let stamp { generationStart = stamp }
+                        if type == "assistant" {
+                            model = message["model"] as? String ?? "Unknown model"
+                            effort = event["effort"] as? String ?? event["perTurnEffort"] as? String ?? "Unknown effort"
+                            let usage = message["usage"] as? [String: Any] ?? [:]
+                            let tokens = usage["output_tokens"] as? Int ?? 0
+                            let messageID = message["id"] as? String ?? event["uuid"] as? String ?? ""
+                            if let index = claudeUsage[messageID] {
+                                tokenSamples[index].tokens = max(tokenSamples[index].tokens, tokens)
+                                if let stamp { tokenSamples[index].end = max(tokenSamples[index].end, stamp) }
+                            } else {
+                                let count = tokenSamples.count
+                                recordUsage(tokens, stamp)
+                                if tokenSamples.count > count { claudeUsage[messageID] = count; generationStart = stamp }
+                            }
+                        }
                         if cwd.isEmpty { cwd = event["cwd"] as? String ?? "" }
                         if type == "ai-title", let value = event["aiTitle"] as? String { title = value }
                         if type == "custom-title", let value = event["customTitle"] as? String { customTitle = value }
@@ -102,7 +128,21 @@ final class TranscriptReader {
                             cwd = payload["cwd"] as? String ?? ""; messageCwd = cwd
                             branch = (payload["git"] as? [String: Any])?["branch"] as? String ?? ""
                         }
-                        if type == "turn_context" { messageCwd = payload["cwd"] as? String ?? messageCwd }
+                        if type == "turn_context" {
+                            messageCwd = payload["cwd"] as? String ?? messageCwd
+                            model = payload["model"] as? String ?? "Unknown model"
+                            effort = payload["effort"] as? String ?? payload["reasoning_effort"] as? String ?? "Unknown effort"
+                            generationStart = stamp
+                        }
+                        if type == "event_msg", payload["type"] as? String == "task_started" { generationStart = stamp }
+                        if type == "event_msg", payload["type"] as? String == "token_count",
+                           let info = payload["info"] as? [String: Any], let usage = info["total_token_usage"] as? [String: Any],
+                           let output = usage["output_tokens"] as? Int {
+                            // Cumulative usage repeats after replies; count each increase once.
+                            if output > totalOutput { recordUsage(output - totalOutput, stamp); generationStart = stamp }
+                            totalOutput = max(totalOutput, output)
+                        }
+                        if type == "response_item", ["function_call_output", "custom_tool_call_output"].contains(payload["type"] as? String ?? "") { generationStart = stamp }
                         guard type == "response_item" else { return true }
                         if payload["type"] as? String == "function_call" {
                             let argument = payload["arguments"] as? String ?? ""
@@ -131,6 +171,7 @@ final class TranscriptReader {
         var search = ""
         for message in main { if search.utf16.count >= 40000 { break }; search += message.text + "\n" }
         var session = Session(id: id, tool: tool, title: title, cwd: cwd, filePath: path, startedAt: started ?? birth, updatedAt: tool == "cursor" ? updated ?? modified : last ?? updated ?? modified, messageCount: main.count, preview: collapse(prompt), searchText: prefixUTF16(search, 40000), prTitles: resolvePRTitles(prTitles), messages: messages)
+        session.tokenSamples = tokenSamples
         (session.timeline, session.untimed) = makeTimeline(session)
         return session
     }

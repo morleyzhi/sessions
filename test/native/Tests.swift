@@ -94,6 +94,31 @@ import SQLite3
         check("Codex uses the session index title", codexSession.title == "Native app")
         check("Codex injected instructions stay out of messages", codexSession.messageCount == 2)
         check("Codex tool calls retain summaries", codexSession.messages[1].toolCalls?.first?.summary == "pwd")
+        let usagePath = try write("token-usage.jsonl", [
+            ["type": "user", "timestamp": "2026-10-09T10:00:00Z", "message": ["content": "Hello"]],
+            ["type": "assistant", "timestamp": "2026-10-09T10:00:10Z", "effort": "high", "message": ["id": "reply", "model": "opus", "usage": ["output_tokens": 100], "content": "Hi"]],
+            ["type": "assistant", "timestamp": "2026-10-09T10:00:10Z", "effort": "high", "message": ["id": "reply", "model": "opus", "usage": ["output_tokens": 100], "content": "Hi again"]]
+        ])
+        let claudeTokens = reader.parse(tool: "claude", path: usagePath)!.tokenSamples!
+        check("Repeated Claude usage counts once", claudeTokens.count == 1)
+        check("Claude output uses elapsed seconds", claudeTokens.first?.rate == 10)
+        check("Claude records the effort", claudeTokens.first?.effort == "high")
+        check("Claude records the model", claudeTokens.first?.model == "opus")
+        let tokenPath = try write("codex-usage.jsonl", [
+            ["type": "turn_context", "timestamp": "2026-10-09T10:00:00Z", "payload": ["model": "gpt", "effort": "medium"]],
+            ["type": "event_msg", "timestamp": "2026-10-09T10:00:10Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 100]]]],
+            ["type": "event_msg", "timestamp": "2026-10-09T10:00:11Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 100]]]],
+            ["type": "response_item", "timestamp": "2026-10-09T10:01:00Z", "payload": ["type": "function_call_output", "output": "Done"]],
+            ["type": "event_msg", "timestamp": "2026-10-09T10:01:10Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 300]]]],
+            ["type": "event_msg", "timestamp": "2026-10-09T12:01:10Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 400]]]]
+        ])
+        let codexTokens = reader.parse(tool: "codex", path: tokenPath)!.tokenSamples!
+        check("Codex counts increases in output usage", codexTokens.map(\.tokens) == [100, 200])
+        check("Codex excludes tool execution time", codexTokens.last?.rate == 20)
+        check("Codex records the model", codexTokens.first?.model == "gpt")
+        check("Codex records the effort", codexTokens.first?.effort == "medium")
+        let decoded = try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(reader.parse(tool: "codex", path: tokenPath)!))
+        check("Cached summaries retain token usage", decoded.tokenSamples == codexTokens)
         let chat = root.appendingPathComponent(".cursor/chats/workspace/chat")
         try FileManager.default.createDirectory(at: chat, withIntermediateDirectories: true)
         var db: OpaquePointer?
@@ -128,7 +153,7 @@ import SQLite3
         try JSONSerialization.data(withJSONObject: [claude: legacy]).write(to: migrationDir.appendingPathComponent("index.json"))
         let migrated = IndexStore(home: root.path, directory: migrationDir)
         check("Existing app summaries appear before scanning", migrated.cachedSessions().first?.title == "Saved title")
-        check("Unchanged transcripts retain migrated summaries", migrated.refresh().first(where: { $0.tool == "claude" })?.title == "Saved title")
+        check("Migrated summaries refresh token usage", migrated.refresh().first(where: { $0.tool == "claude" })?.fingerprint.hasPrefix("native-v2:") == true)
         check("Migrated summaries persist as a native cache", FileManager.default.fileExists(atPath: migrationDir.appendingPathComponent("native-index-v1.json").path))
         check("Emoji count consistently in search text", prefixUTF16("a😀bc", 4) == "a😀b")
         try FileManager.default.removeItem(atPath: claude)

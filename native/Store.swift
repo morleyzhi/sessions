@@ -97,7 +97,7 @@ final class IndexStore {
             if offset % 20 == 0 { progress?(offset, targets.count, uniqueSessions(Array(next.values))) }
             let source = tool == "cursor" ? path + "/store.db" : path
             guard let stat = try? FileManager.default.attributesOfItem(atPath: source) else { continue }
-            var fingerprint = "native-v1:\((stat[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0):\(stat[.size] ?? 0)"
+            var fingerprint = "native-v2:\((stat[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0):\(stat[.size] ?? 0)"
             if tool == "cursor" {
                 for extra in [path + "/store.db-wal", path + "/meta.json"] {
                     let attrs = try? FileManager.default.attributesOfItem(atPath: extra)
