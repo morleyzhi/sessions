@@ -23,55 +23,64 @@ struct TokenChart {
         let totalDuration = scale.segments.last?.bottom ?? duration
         let offset = min(max(0, offset), max(0, totalDuration - duration))
         self.scale = scale; self.duration = duration; self.totalDuration = totalDuration; self.offset = offset
-        let smoothingMinutes = [60: 2, 120: 3, 240: 5, 480: 8, 720: 10, 1440: 15][minutes] ?? 2
+        let smoothingMinutes = 1
         self.smoothingMinutes = smoothingMinutes
-        let windowDuration = Double(smoothingMinutes) * 60000
         let step = duration / Double(count)
         var breaks = Array(repeating: false, count: count)
         var windows = Array(repeating: (0.0, 0.0), count: count)
-        var trendWindows = windows
         for index in 0..<count {
             let left = offset + Double(index) * step, right = left + step
             breaks[index] = scale.segments.contains { $0.gap && left < $0.bottom && right > $0.top }
-            let position = (left + right) / 2
-            if !breaks[index], let segment = scale.segments.first(where: { !$0.gap && position >= $0.top && position < $0.bottom }) {
-                let time = scale.time(at: position)
-                windows[index] = (max(segment.older, time - windowDuration), time)
-                trendWindows[index] = (max(segment.older, time - windowDuration * 5), time)
-            }
+            if !breaks[index] { windows[index] = (scale.time(at: right), scale.time(at: left)) }
         }
         gaps = Array(breaks.reversed())
-        let oldest = trendWindows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
-        let newest = trendWindows.map { $0.1 }.max() ?? now
-        let visible = samples.filter { $0.end > oldest && $0.start < newest }
-        let mainOldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
-        let mainNewest = windows.map { $0.1 }.max() ?? now
-        let series = Set(visible.filter { $0.end > mainOldest && $0.start < mainNewest }.map(\.series)).sorted()
+        let oldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
+        let newest = windows.map { $0.1 }.max() ?? now
+        let series = Set(samples.filter { $0.end > oldest && $0.start < newest }.map(\.series)).sorted()
         self.series = series
-        let groups = Dictionary(grouping: visible, by: \.series)
-        func averages(_ windows: [(Double, Double)]) -> [[Double]] {
-            var values = Array(repeating: Array(repeating: 0.0, count: series.count), count: count)
-            for (column, name) in series.enumerated() {
-                let samples = (groups[name] ?? []).sorted { $0.start < $1.start }
-                var active: [(Double, Double)] = []
-                // Concurrent sessions add tokens while sharing the same active seconds.
-                for sample in samples {
-                    if let last = active.last, sample.start <= last.1 { active[active.count - 1].1 = max(last.1, sample.end) }
-                    else { active.append((sample.start, sample.end)) }
-                }
-                for (index, window) in windows.enumerated() where window.1 > window.0 {
-                    let activeMS = active.reduce(0.0) { $0 + max(0, min($1.1, window.1) - max($1.0, window.0)) }
-                    guard activeMS > 0 else { continue }
-                    let tokens = samples.reduce(0.0) { sum, sample in
-                        sum + sample.rate * max(0, min(sample.end, window.1) - max(sample.start, window.0)) / 1000
+        let groups = Dictionary(grouping: samples, by: \.series)
+        var values = Array(repeating: Array(repeating: 0.0, count: series.count), count: count)
+        var trends = values
+        let solidDecay = Double(smoothingMinutes * 60) / log(2)
+        let trendDecay = solidDecay * 5
+        for (column, name) in series.enumerated() {
+            let events = (groups[name] ?? []).flatMap { [($0.start, $0.rate), ($0.end, -$0.rate)] }.sorted { $0.0 < $1.0 }
+            var rate = 0.0, previous = events.first?.0 ?? now
+            var solid: Double?, trend: Double?
+            // Read earlier activity too, so paging preserves each line's smoothing.
+            for event in events {
+                let seconds = (event.0 - previous) / 1000
+                if seconds > 0, rate > 0.000001 {
+                    let solidStart = solid ?? rate, trendStart = trend ?? rate
+                    func integral(_ start: Double, _ decay: Double, _ from: Double, _ to: Double) -> Double {
+                        rate * (to - from) + (start - rate) * decay * (exp(-from / decay) - exp(-to / decay))
                     }
-                    values[index][column] = tokens / (activeMS / 1000)
+                    if event.0 > oldest, previous < newest {
+                        for (index, window) in windows.enumerated() where window.1 > previous && window.0 < event.0 {
+                            let from = max(0, (window.0 - previous) / 1000), to = min(seconds, (window.1 - previous) / 1000)
+                            guard to > from else { continue }
+                            values[index][column] += integral(solidStart, solidDecay, from, to)
+                            trends[index][column] += integral(trendStart, trendDecay, from, to)
+                        }
+                    }
+                    solid = rate + (solidStart - rate) * exp(-seconds / solidDecay)
+                    trend = rate + (trendStart - rate) * exp(-seconds / trendDecay)
                 }
+                rate += event.1; previous = event.0
             }
-            return Array(values.reversed())
+            // Only active seconds contribute; idle time neither decays nor extends a line.
+            var active: [(Double, Double)] = []
+            for sample in (groups[name] ?? []).sorted(by: { $0.start < $1.start }) {
+                if let last = active.last, sample.start <= last.1 { active[active.count - 1].1 = max(last.1, sample.end) }
+                else { active.append((sample.start, sample.end)) }
+            }
+            for (index, window) in windows.enumerated() where window.1 > window.0 {
+                let seconds = active.reduce(0.0) { $0 + max(0, min($1.1, window.1) - max($1.0, window.0)) } / 1000
+                if seconds > 0 { values[index][column] /= seconds; trends[index][column] /= seconds }
+            }
         }
-        values = averages(windows)
-        trendValues = averages(trendWindows)
+        self.values = Array(values.reversed())
+        trendValues = Array(trends.reversed())
     }
     func time(at fraction: Double) -> Double { scale.time(at: offset + duration * (1 - fraction)) }
 }
@@ -186,10 +195,10 @@ final class TokensCanvas: FlippedView {
         let index = min(chart.values.count - 1, max(0, Int(fraction * Double(chart.values.count))))
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
-        lines.append("\(chart.smoothingMinutes) min trailing average · Active seconds only")
+        lines.append("\(chart.smoothingMinutes) min active-time smoothing")
         lines.append(String(format: "Total: %.1f output TPS", shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }))
         for column in shownColumns { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
-        if let column = trendColumn { lines.append(String(format: "Dashed %d min average: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
+        if let column = trendColumn { lines.append(String(format: "Dashed %d min active-time smoothing: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
         tooltip.show(lines.joined(separator: "\n"), in: window)
     }
 }
@@ -265,8 +274,8 @@ final class TokensPane: FlippedView {
         if let selected = canvas.selectedSeries, !chart.series.contains(selected) { canvas.selectedSeries = nil }
         let description = canvas.stacked ? "Colored bands stack to total TPS" : "Each line shows its own TPS"
         note.stringValue = canvas.trendColumn == nil
-            ? "\(chart.smoothingMinutes) min average · Active seconds only · \(description)"
-            : "Solid: \(chart.smoothingMinutes) min · Dashed: \(chart.trendMinutes) min · Active seconds only"
+            ? "\(chart.smoothingMinutes) min active-time smoothing · \(description)"
+            : "Solid: \(chart.smoothingMinutes) active min · Dashed: \(chart.trendMinutes) active min"
         newer.isEnabled = offset > 0; older.isEnabled = !filtered.isEmpty && offset + chart.duration < chart.totalDuration
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d, HH:mm"
         range.stringValue = formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 0) / 1000)) + "  →  " + formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 1) / 1000))
