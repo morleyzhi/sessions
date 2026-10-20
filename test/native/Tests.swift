@@ -119,6 +119,19 @@ import SQLite3
         check("Codex records the effort", codexTokens.first?.effort == "medium")
         let decoded = try JSONDecoder().decode(Session.self, from: JSONEncoder().encode(reader.parse(tool: "codex", path: tokenPath)!))
         check("Cached summaries retain token usage", decoded.tokenSamples == codexTokens)
+        let delayedUsagePath = try write("delayed-usage.jsonl", [
+            ["type": "turn_context", "timestamp": "2026-10-09T10:00:00Z", "payload": ["model": "gpt", "effort": "medium"]],
+            ["type": "response_item", "timestamp": "2026-10-09T10:00:10Z", "payload": ["type": "custom_tool_call", "name": "shell", "input": "pwd"]],
+            ["type": "response_item", "timestamp": "2026-10-09T10:01:00Z", "payload": ["type": "custom_tool_call_output", "output": "Done"]],
+            ["type": "event_msg", "timestamp": "2026-10-09T10:01:00.001Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 100]]]],
+            ["type": "response_item", "timestamp": "2026-10-09T10:01:10Z", "payload": ["type": "message", "role": "assistant", "content": "Done"]],
+            ["type": "token_usage_record", "timestamp": "2026-10-09T10:01:10.001Z", "payload": ["usage": ["output_tokens": 200], "thread_token_usage": ["output_tokens": 300]]],
+            ["type": "event_msg", "timestamp": "2026-10-09T10:01:10.002Z", "payload": ["type": "token_count", "info": ["total_token_usage": ["output_tokens": 300]]]]
+        ])
+        let delayedUsage = reader.parse(tool: "codex", path: delayedUsagePath)!.tokenSamples!
+        check("Delayed Codex reports use the model reply time", delayedUsage.first?.rate == 10)
+        check("The next reply starts after tool execution", delayedUsage.last?.rate == 20)
+        check("Codex usage records count once", delayedUsage.map(\.tokens) == [100, 200])
         let chat = root.appendingPathComponent(".cursor/chats/workspace/chat")
         try FileManager.default.createDirectory(at: chat, withIntermediateDirectories: true)
         var db: OpaquePointer?
@@ -153,7 +166,7 @@ import SQLite3
         try JSONSerialization.data(withJSONObject: [claude: legacy]).write(to: migrationDir.appendingPathComponent("index.json"))
         let migrated = IndexStore(home: root.path, directory: migrationDir)
         check("Existing app summaries appear before scanning", migrated.cachedSessions().first?.title == "Saved title")
-        check("Migrated summaries refresh token usage", migrated.refresh().first(where: { $0.tool == "claude" })?.fingerprint.hasPrefix("native-v2:") == true)
+        check("Migrated summaries refresh token usage", migrated.refresh().first(where: { $0.tool == "claude" })?.fingerprint.hasPrefix("native-v3:") == true)
         check("Migrated summaries persist as a native cache", FileManager.default.fileExists(atPath: migrationDir.appendingPathComponent("native-index-v1.json").path))
         check("Emoji count consistently in search text", prefixUTF16("a😀bc", 4) == "a😀b")
         try FileManager.default.removeItem(atPath: claude)

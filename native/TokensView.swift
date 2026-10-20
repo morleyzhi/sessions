@@ -6,6 +6,8 @@ struct TokenChart {
     let duration: Double
     let series: [String]
     let values: [[Double]]
+    let trendValues: [[Double]]
+    var trendMinutes: Int { smoothingMinutes * 5 }
     let gaps: [Bool]
     let totalDuration: Double
     let smoothingMinutes: Int
@@ -27,6 +29,7 @@ struct TokenChart {
         let step = duration / Double(count)
         var breaks = Array(repeating: false, count: count)
         var windows = Array(repeating: (0.0, 0.0), count: count)
+        var trendWindows = windows
         for index in 0..<count {
             let left = offset + Double(index) * step, right = left + step
             breaks[index] = scale.segments.contains { $0.gap && left < $0.bottom && right > $0.top }
@@ -34,24 +37,41 @@ struct TokenChart {
             if !breaks[index], let segment = scale.segments.first(where: { !$0.gap && position >= $0.top && position < $0.bottom }) {
                 let time = scale.time(at: position)
                 windows[index] = (max(segment.older, time - halfWindow), min(segment.newer, time + halfWindow))
+                trendWindows[index] = (max(segment.older, time - halfWindow * 5), min(segment.newer, time + halfWindow * 5))
             }
         }
         gaps = Array(breaks.reversed())
-        let oldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
-        let newest = windows.map { $0.1 }.max() ?? now
+        let oldest = trendWindows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
+        let newest = trendWindows.map { $0.1 }.max() ?? now
         let visible = samples.filter { $0.end > oldest && $0.start < newest }
-        series = Set(visible.map(\.series)).sorted()
-        let indices = Dictionary(uniqueKeysWithValues: series.enumerated().map { ($0.element, $0.offset) })
-        var values = Array(repeating: Array(repeating: 0.0, count: series.count), count: count)
-        // Average each series over real elapsed time, stopping at skipped inactivity.
-        for sample in visible {
-            guard let column = indices[sample.series] else { continue }
-            for (index, window) in windows.enumerated() where window.1 > window.0 {
-                let overlap = max(0, min(sample.end, window.1) - max(sample.start, window.0))
-                values[index][column] += sample.rate * overlap / (window.1 - window.0)
+        let mainOldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
+        let mainNewest = windows.map { $0.1 }.max() ?? now
+        let series = Set(visible.filter { $0.end > mainOldest && $0.start < mainNewest }.map(\.series)).sorted()
+        self.series = series
+        let groups = Dictionary(grouping: visible, by: \.series)
+        func averages(_ windows: [(Double, Double)]) -> [[Double]] {
+            var values = Array(repeating: Array(repeating: 0.0, count: series.count), count: count)
+            for (column, name) in series.enumerated() {
+                let samples = (groups[name] ?? []).sorted { $0.start < $1.start }
+                var active: [(Double, Double)] = []
+                // Concurrent sessions add tokens while sharing the same active seconds.
+                for sample in samples {
+                    if let last = active.last, sample.start <= last.1 { active[active.count - 1].1 = max(last.1, sample.end) }
+                    else { active.append((sample.start, sample.end)) }
+                }
+                for (index, window) in windows.enumerated() where window.1 > window.0 {
+                    let activeMS = active.reduce(0.0) { $0 + max(0, min($1.1, window.1) - max($1.0, window.0)) }
+                    guard activeMS > 0 else { continue }
+                    let tokens = samples.reduce(0.0) { sum, sample in
+                        sum + sample.rate * max(0, min(sample.end, window.1) - max(sample.start, window.0)) / 1000
+                    }
+                    values[index][column] = tokens / (activeMS / 1000)
+                }
             }
+            return Array(values.reversed())
         }
-        self.values = Array(values.reversed())
+        values = averages(windows)
+        trendValues = averages(trendWindows)
     }
     func time(at fraction: Double) -> Double { scale.time(at: offset + duration * (1 - fraction)) }
 }
@@ -61,8 +81,12 @@ final class TokensCanvas: FlippedView {
     var stacked = true { didSet { needsDisplay = true } }
     var selectedSeries: String? { didSet { needsDisplay = true } }
     var shownColumns: [Int] { chart.map { chart in chart.series.indices.filter { selectedSeries == nil || chart.series[$0] == selectedSeries } } ?? [] }
+    var trendColumn: Int? { shownColumns.count == 1 ? shownColumns.first : nil }
     var maximumRate: Double {
-        chart?.values.map { row in stacked ? shownColumns.reduce(0.0) { $0 + row[$1] } : shownColumns.map { row[$0] }.max() ?? 0 }.max() ?? 0
+        guard let chart else { return 0 }
+        let main = chart.values.map { row in stacked ? shownColumns.reduce(0.0) { $0 + row[$1] } : shownColumns.map { row[$0] }.max() ?? 0 }.max() ?? 0
+        let trend = trendColumn.map { column in chart.trendValues.map { $0[column] }.max() ?? 0 } ?? 0
+        return max(main, trend)
     }
     private let tooltip = TimelineTooltip()
     private var tracking: NSTrackingArea?
@@ -107,7 +131,7 @@ final class TokensCanvas: FlippedView {
                 fill.move(to: point(first, lower)); fill.line(to: point(first, upper)); line.move(to: point(first, upper))
                 for index in (first + 1)..<end {
                     fill.line(to: point(index, upper))
-                    if chart.values[index][column] > 0 || chart.values[index - 1][column] > 0 { line.line(to: point(index, upper)) }
+                    if chart.values[index][column] > 0 && chart.values[index - 1][column] > 0 { line.line(to: point(index, upper)) }
                     else { line.move(to: point(index, upper)) }
                 }
                 for index in (first..<end).reversed() { fill.line(to: point(index, lower)) }
@@ -115,6 +139,18 @@ final class TokensCanvas: FlippedView {
                 color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke(); first = end
             }
             if stacked { lower = upper }
+        }
+        if let column = trendColumn {
+            let line = NSBezierPath(); var connected = false
+            for index in chart.trendValues.indices {
+                let value = chart.trendValues[index][column]
+                guard !chart.gaps[index], value > 0 else { connected = false; continue }
+                let point = NSPoint(x: rect.minX + (Double(index) + 0.5) / Double(chart.trendValues.count) * rect.width, y: rect.maxY - value / maximum * rect.height)
+                if connected { line.line(to: point) } else { line.move(to: point) }
+                connected = true
+            }
+            color(chart.series[column]).setStroke(); line.lineWidth = 2
+            line.setLineDash([6, 5], count: 2, phase: 0); line.stroke()
         }
         for segment in chart.scale.segments where segment.gap {
             let width = max(5, (segment.bottom - segment.top) / chart.duration * rect.width)
@@ -150,9 +186,10 @@ final class TokensCanvas: FlippedView {
         let index = min(chart.values.count - 1, max(0, Int(fraction * Double(chart.values.count))))
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
-        lines.append("\(chart.smoothingMinutes) min moving average")
+        lines.append("\(chart.smoothingMinutes) min average · Active seconds only")
         lines.append(String(format: "Total: %.1f output TPS", shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }))
         for column in shownColumns { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
+        if let column = trendColumn { lines.append(String(format: "Dashed %d min average: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
         tooltip.show(lines.joined(separator: "\n"), in: window)
     }
 }
@@ -227,7 +264,9 @@ final class TokensPane: FlippedView {
         offset = chart.offset; canvas.chart = chart; canvas.stacked = stacked.state == .on
         if let selected = canvas.selectedSeries, !chart.series.contains(selected) { canvas.selectedSeries = nil }
         let description = canvas.stacked ? "Colored bands stack to total TPS" : "Each line shows its own TPS"
-        note.stringValue = "\(chart.smoothingMinutes) min moving average · \(description) · Click a legend item to show it alone"
+        note.stringValue = canvas.trendColumn == nil
+            ? "\(chart.smoothingMinutes) min average · Active seconds only · \(description)"
+            : "Solid: \(chart.smoothingMinutes) min · Dashed: \(chart.trendMinutes) min · Active seconds only"
         newer.isEnabled = offset > 0; older.isEnabled = !filtered.isEmpty && offset + chart.duration < chart.totalDuration
         let formatter = DateFormatter(); formatter.dateFormat = "MMM d, HH:mm"
         range.stringValue = formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 0) / 1000)) + "  →  " + formatter.string(from: Date(timeIntervalSince1970: chart.time(at: 1) / 1000))

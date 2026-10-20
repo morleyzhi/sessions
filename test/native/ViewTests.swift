@@ -144,15 +144,32 @@ import AppKit
         let continuous = TokenSample(start: tokenNow - 10000000, end: tokenNow, tokens: 10000, harness: "codex", model: "gpt", effort: "high")
         let burst = TokenSample(start: tokenNow - 605000, end: tokenNow - 595000, tokens: 1000, harness: "claude", model: "opus", effort: "low")
         let smoothed = TokenChart(samples: [continuous, burst], now: tokenNow, offset: 0, minutes: 60)
-        check("Brief bursts spread over two minutes", smoothed.maximum < 10)
+        check("Short activity retains its recorded token rate", abs(smoothed.maximum - 101) < 0.001)
         check("Smoothing preserves a steady output rate", smoothed.values.prefix(10).allSatisfy { abs($0[1] - 1) < 0.001 })
         check("One-hour charts average two minutes", smoothed.smoothingMinutes == 2)
         check("Day charts average fifteen minutes", TokenChart(samples: [continuous], now: tokenNow, offset: 0, minutes: 1440).smoothingMinutes == 15)
+        let shortUse = TokenSample(start: tokenNow - 50000, end: tokenNow - 40000, tokens: 100, harness: "codex", model: "gpt", effort: "high")
+        let longerUse = TokenSample(start: tokenNow - 30000, end: tokenNow, tokens: 600, harness: "codex", model: "gpt", effort: "high")
+        let activeOnly = TokenChart(samples: [shortUse, longerUse], now: tokenNow, offset: 0, minutes: 60)
+        check("Main averages exclude idle seconds", abs(activeOnly.values.last![0] - 17.5) < 0.001)
+        check("Trend averages exclude idle seconds", abs(activeOnly.trendValues.last![0] - 17.5) < 0.001)
+        let steadyUse = TokenSample(start: tokenNow - 600000, end: tokenNow - 30000, tokens: 5700, harness: "codex", model: "gpt", effort: "high")
+        var fasterUse = longerUse; fasterUse.tokens = 3000
+        let trend = TokenChart(samples: [steadyUse, fasterUse], now: tokenNow, offset: 0, minutes: 60)
+        check("The trend averages five times longer", trend.trendMinutes == 10)
+        check("The longer trend softens recent rate changes", trend.trendValues.last![0] < trend.values.last![0])
+        comparison.chart = trend
+        check("A single series shows the dashed trend", comparison.trendColumn == 0)
+        comparison.chart = combined
+        check("Several series hide the dashed trend", comparison.trendColumn == nil)
+        comparison.selectedSeries = combined.series[0]
+        check("Legend isolation shows the dashed trend", comparison.trendColumn == 0)
         let quiet = TokenSample(start: history.start, end: history.end, tokens: 60, harness: "claude", model: "opus", effort: "low")
         let separate = TokenChart(samples: [tokenSample, quiet], now: tokenNow, offset: 0, minutes: 60)
         let quietColumn = separate.series.firstIndex(of: quiet.series)!
         check("Smoothing stops at skipped inactivity", separate.values.enumerated().filter { separate.time(at: (Double($0.offset) + 0.5) / Double(separate.values.count)) > tokenSample.start }.allSatisfy { $0.element[quietColumn] == 0 })
         check("Skipped inactivity has no plotted output", separate.values.enumerated().filter { separate.gaps[$0.offset] }.allSatisfy { $0.element.allSatisfy { $0 == 0 } })
+        check("The dashed trend stops at skipped inactivity", separate.trendValues.enumerated().filter { separate.gaps[$0.offset] }.allSatisfy { $0.element.allSatisfy { $0 == 0 } })
         let olderChart = TokenChart(samples: [continuous], now: tokenNow, offset: 3600, minutes: 60)
         check("Paging shows the preceding hour", olderChart.time(at: 1) == tokenNow - 3600000)
         check("Paging stops at recorded history", TokenChart(samples: [continuous], now: tokenNow, offset: 1e9, minutes: 60).offset == olderChart.totalDuration - 3600)

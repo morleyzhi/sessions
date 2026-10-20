@@ -72,12 +72,23 @@ final class TranscriptReader {
         var prTitles: [String: String] = [:]
         var tokenSamples: [TokenSample] = []
         var generationStart: Double?
+        var generationEnd: Double?
+        var nextGenerationStart: Double?
         var model = "Unknown model", effort = "Unknown effort"
         var totalOutput = 0
         var claudeUsage: [String: Int] = [:]
         func recordUsage(_ tokens: Int, _ stamp: Double?) {
             guard tokens > 0, let end = stamp, let start = generationStart, end > start, end - start <= 30 * 60000 else { return }
             tokenSamples.append(TokenSample(start: start, end: end, tokens: tokens, harness: tool, model: model, effort: effort))
+        }
+        func recordCodexUsage(_ output: Int, reported: Int?, stamp: Double?) {
+            let tokens = min(max(0, output - totalOutput), reported ?? Int.max)
+            if tokens > 0 {
+                recordUsage(tokens, generationEnd ?? stamp)
+                generationStart = nextGenerationStart ?? stamp
+                generationEnd = nil; nextGenerationStart = nil
+            }
+            totalOutput = max(totalOutput, output)
         }
         if tool == "cursor" {
             let meta = jsonFile(path + "/meta.json")
@@ -132,17 +143,24 @@ final class TranscriptReader {
                             messageCwd = payload["cwd"] as? String ?? messageCwd
                             model = payload["model"] as? String ?? "Unknown model"
                             effort = payload["effort"] as? String ?? payload["reasoning_effort"] as? String ?? "Unknown effort"
-                            generationStart = stamp
+                            generationStart = stamp; generationEnd = nil; nextGenerationStart = nil
                         }
-                        if type == "event_msg", payload["type"] as? String == "task_started" { generationStart = stamp }
+                        if type == "event_msg", payload["type"] as? String == "task_started" { generationStart = stamp; generationEnd = nil; nextGenerationStart = nil }
+                        if type == "response_item", ["message", "reasoning", "function_call", "custom_tool_call"].contains(payload["type"] as? String ?? ""), payload["role"] as? String != "user" { generationEnd = stamp }
+                        if type == "token_usage_record", let usage = payload["usage"] as? [String: Any], let tokens = usage["output_tokens"] as? Int {
+                            let total = (payload["thread_token_usage"] as? [String: Any])?["output_tokens"] as? Int ?? totalOutput + tokens
+                            recordCodexUsage(total, reported: tokens, stamp: stamp)
+                        }
                         if type == "event_msg", payload["type"] as? String == "token_count",
                            let info = payload["info"] as? [String: Any], let usage = info["total_token_usage"] as? [String: Any],
                            let output = usage["output_tokens"] as? Int {
-                            // Cumulative usage repeats after replies; count each increase once.
-                            if output > totalOutput { recordUsage(output - totalOutput, stamp); generationStart = stamp }
-                            totalOutput = max(totalOutput, output)
+                            let reported = (info["last_token_usage"] as? [String: Any])?["output_tokens"] as? Int
+                            recordCodexUsage(output, reported: reported, stamp: stamp)
                         }
-                        if type == "response_item", ["function_call_output", "custom_tool_call_output"].contains(payload["type"] as? String ?? "") { generationStart = stamp }
+                        if type == "response_item", ["function_call_output", "custom_tool_call_output"].contains(payload["type"] as? String ?? "") {
+                            if generationEnd != nil { nextGenerationStart = stamp }
+                            else { generationStart = stamp }
+                        }
                         guard type == "response_item" else { return true }
                         if payload["type"] as? String == "function_call" {
                             let argument = payload["arguments"] as? String ?? ""
