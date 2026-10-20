@@ -9,6 +9,7 @@ struct TokenChart {
     let trendValues: [[Double]]
     var trendMinutes: Int { smoothingMinutes * 5 }
     let gaps: [Bool]
+    let fractions: [Double]
     let totalDuration: Double
     let smoothingMinutes: Int
     var maximum: Double { max(1, values.map { $0.reduce(0, +) }.max() ?? 0) }
@@ -26,13 +27,22 @@ struct TokenChart {
         let smoothingMinutes = 1
         self.smoothingMinutes = smoothingMinutes
         let step = duration / Double(count)
+        var edges = (0...count).map { offset + Double($0) * step }
+        for segment in scale.segments where segment.gap {
+            edges += [segment.top, segment.bottom].filter { $0 > offset && $0 < offset + duration }
+        }
+        edges = Set(edges).sorted()
+        let count = edges.count - 1
         var breaks = Array(repeating: false, count: count)
         var windows = Array(repeating: (0.0, 0.0), count: count)
+        var positions: [Double] = []
         for index in 0..<count {
-            let left = offset + Double(index) * step, right = left + step
-            breaks[index] = scale.segments.contains { $0.gap && left < $0.bottom && right > $0.top }
+            let left = edges[index], right = edges[index + 1], middle = (left + right) / 2
+            positions.append(1 - (middle - offset) / duration)
+            breaks[index] = scale.segments.contains { $0.gap && middle >= $0.top && middle < $0.bottom }
             if !breaks[index] { windows[index] = (scale.time(at: right), scale.time(at: left)) }
         }
+        fractions = Array(positions.reversed())
         gaps = Array(breaks.reversed())
         let oldest = windows.filter { $0.1 > $0.0 }.map { $0.0 }.min() ?? now
         let newest = windows.map { $0.1 }.max() ?? now
@@ -82,6 +92,21 @@ struct TokenChart {
         self.values = Array(values.reversed())
         trendValues = Array(trends.reversed())
     }
+    func runs(column: Int) -> [[Int]] {
+        var result: [[Int]] = [], run: [Int] = []
+        for index in values.indices {
+            if gaps[index] {
+                if !run.isEmpty { result.append(run); run = [] }
+            } else if values[index][column] > 0 {
+                if let last = run.last, time(at: fractions[index]) - time(at: fractions[last]) > 15 * 60000 {
+                    result.append(run); run = []
+                }
+                run.append(index)
+            }
+        }
+        if !run.isEmpty { result.append(run) }
+        return result
+    }
     func time(at fraction: Double) -> Double { scale.time(at: offset + duration * (1 - fraction)) }
 }
 
@@ -128,35 +153,30 @@ final class TokensCanvas: FlippedView {
             let name = chart.series[column]
             let upper = chart.values.enumerated().map { lower[$0.offset] + $0.element[column] }
             let color = color(name)
-            var first = 0
-            while first < upper.count {
-                if chart.gaps[first] { first += 1; continue }
-                var end = first + 1
-                while end < upper.count && !chart.gaps[end] { end += 1 }
+            for run in chart.runs(column: column) {
                 func point(_ index: Int, _ values: [Double]) -> NSPoint {
-                    NSPoint(x: rect.minX + (Double(index) + 0.5) / Double(upper.count) * rect.width, y: rect.maxY - values[index] / maximum * rect.height)
+                    NSPoint(x: rect.minX + chart.fractions[index] * rect.width, y: rect.maxY - values[index] / maximum * rect.height)
                 }
-                let fill = NSBezierPath(), line = NSBezierPath()
+                let first = run[0], fill = NSBezierPath(), line = NSBezierPath()
                 fill.move(to: point(first, lower)); fill.line(to: point(first, upper)); line.move(to: point(first, upper))
-                for index in (first + 1)..<end {
-                    fill.line(to: point(index, upper))
-                    if chart.values[index][column] > 0 && chart.values[index - 1][column] > 0 { line.line(to: point(index, upper)) }
-                    else { line.move(to: point(index, upper)) }
-                }
-                for index in (first..<end).reversed() { fill.line(to: point(index, lower)) }
+                for index in run.dropFirst() { fill.line(to: point(index, upper)); line.line(to: point(index, upper)) }
+                for index in run.reversed() { fill.line(to: point(index, lower)) }
                 if stacked { fill.close(); color.withAlphaComponent(0.32).setFill(); fill.fill() }
-                color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke(); first = end
+                color.setStroke(); line.lineWidth = 2; line.lineJoinStyle = .round; line.lineCapStyle = .round; line.stroke()
+                if run.count == 1 {
+                    let center = point(first, upper)
+                    color.setFill(); NSBezierPath(ovalIn: NSRect(x: center.x - 2, y: center.y - 2, width: 4, height: 4)).fill()
+                }
             }
             if stacked { lower = upper }
         }
         if let column = trendColumn {
-            let line = NSBezierPath(); var connected = false
-            for index in chart.trendValues.indices {
-                let value = chart.trendValues[index][column]
-                guard !chart.gaps[index], value > 0 else { connected = false; continue }
-                let point = NSPoint(x: rect.minX + (Double(index) + 0.5) / Double(chart.trendValues.count) * rect.width, y: rect.maxY - value / maximum * rect.height)
-                if connected { line.line(to: point) } else { line.move(to: point) }
-                connected = true
+            let line = NSBezierPath()
+            for run in chart.runs(column: column) {
+                for (position, index) in run.enumerated() {
+                    let point = NSPoint(x: rect.minX + chart.fractions[index] * rect.width, y: rect.maxY - chart.trendValues[index][column] / maximum * rect.height)
+                    if position == 0 { line.move(to: point) } else { line.line(to: point) }
+                }
             }
             color(chart.series[column]).setStroke(); line.lineWidth = 2
             line.setLineDash([6, 5], count: 2, phase: 0); line.stroke()
@@ -192,13 +212,15 @@ final class TokensCanvas: FlippedView {
         if let gap = chart.scale.segments.first(where: { $0.gap && position >= $0.top && position <= $0.bottom }) {
             tooltip.show("\(Int((gap.newer - gap.older) / 60000)) minutes of inactivity skipped", in: window); return
         }
-        let index = min(chart.values.count - 1, max(0, Int(fraction * Double(chart.values.count))))
+        let index = chart.fractions.indices.min { abs(chart.fractions[$0] - fraction) < abs(chart.fractions[$1] - fraction) } ?? 0
         let formatter = DateFormatter(); formatter.dateStyle = .medium; formatter.timeStyle = .medium
         var lines = [formatter.string(from: Date(timeIntervalSince1970: chart.time(at: fraction) / 1000))]
         lines.append("\(chart.smoothingMinutes) min active-time smoothing")
-        lines.append(String(format: "Total: %.1f output TPS", shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }))
-        for column in shownColumns { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
-        if let column = trendColumn { lines.append(String(format: "Dashed %d min active-time smoothing: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
+        let total = shownColumns.reduce(0.0) { $0 + chart.values[index][$1] }
+        if total > 0 { lines.append(String(format: "Total: %.1f output TPS", total)) }
+        else { lines.append("No recorded activity here; nearby readings are connected") }
+        for column in shownColumns where chart.values[index][column] > 0 { lines.append(String(format: "%@: %.1f TPS", chart.series[column], chart.values[index][column])) }
+        if let column = trendColumn, chart.trendValues[index][column] > 0 { lines.append(String(format: "Dashed %d min active-time smoothing: %.1f TPS", chart.trendMinutes, chart.trendValues[index][column])) }
         tooltip.show(lines.joined(separator: "\n"), in: window)
     }
 }

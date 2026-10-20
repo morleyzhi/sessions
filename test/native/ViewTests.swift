@@ -162,7 +162,7 @@ import AppKit
         let steadyUse = TokenSample(start: tokenNow - 600000, end: tokenNow - 30000, tokens: 5700, harness: "codex", model: "gpt", effort: "high")
         var fasterUse = longerUse; fasterUse.start = tokenNow - 30000; fasterUse.end = tokenNow; fasterUse.tokens = 3000
         let trend = TokenChart(samples: [steadyUse, fasterUse], now: tokenNow, offset: 0, minutes: 60)
-        let beforeActivity = trend.values.indices.filter { trend.time(at: (Double($0) + 0.5) / Double(trend.values.count)) <= steadyUse.start }
+        let beforeActivity = trend.values.indices.filter { trend.time(at: trend.fractions[$0]) <= steadyUse.start }
         check("The solid line excludes future activity", beforeActivity.allSatisfy { trend.values[$0][0] == 0 })
         check("The dashed line excludes future activity", beforeActivity.allSatisfy { trend.trendValues[$0][0] == 0 })
         check("Both averages start with recorded activity", trend.values.firstIndex { $0[0] > 0 } == trend.trendValues.firstIndex { $0[0] > 0 })
@@ -180,9 +180,18 @@ import AppKit
         let quiet = TokenSample(start: history.start, end: history.end, tokens: 60, harness: "claude", model: "opus", effort: "low")
         let separate = TokenChart(samples: [tokenSample, quiet], now: tokenNow, offset: 0, minutes: 60)
         let quietColumn = separate.series.firstIndex(of: quiet.series)!
-        check("Smoothing stops at skipped inactivity", separate.values.enumerated().filter { separate.time(at: (Double($0.offset) + 0.5) / Double(separate.values.count)) > tokenSample.start }.allSatisfy { $0.element[quietColumn] == 0 })
+        check("Smoothing stops at skipped inactivity", separate.values.enumerated().filter { separate.time(at: separate.fractions[$0.offset]) > tokenSample.start }.allSatisfy { $0.element[quietColumn] == 0 })
         check("Skipped inactivity has no plotted output", separate.values.enumerated().filter { separate.gaps[$0.offset] }.allSatisfy { $0.element.allSatisfy { $0 == 0 } })
         check("The dashed trend stops at skipped inactivity", separate.trendValues.enumerated().filter { separate.gaps[$0.offset] }.allSatisfy { $0.element.allSatisfy { $0 == 0 } })
+        let nearby = TokenChart(samples: [shortUse, longerUse], now: tokenNow, offset: 0, minutes: 60)
+        check("Nearby activity draws one continuous line", nearby.runs(column: 0).count == 1)
+        check("Connecting readings keeps the original activity values", nearby.values.filter { $0[0] > 0 }.count < nearby.runs(column: 0)[0].last! - nearby.runs(column: 0)[0].first! + 1)
+        let sparseDay = TokenChart(samples: [tokenSample, history], now: tokenNow, offset: 0, minutes: 1440)
+        check("Day charts retain readings beside skipped inactivity", sparseDay.series.count == 2)
+        check("Day charts retain both sides of skipped inactivity", sparseDay.series.indices.allSatisfy { !sparseDay.runs(column: $0).isEmpty })
+        check("Day charts reserve samples for idle breaks", sparseDay.fractions.count > 400)
+        let acrossBreak = TokenChart(samples: [tokenSample, TokenSample(start: history.start, end: history.end, tokens: 600, harness: tokenSample.harness, model: tokenSample.model, effort: tokenSample.effort)], now: tokenNow, offset: 0, minutes: 1440)
+        check("Lines stop at skipped inactivity", acrossBreak.runs(column: 0).count == 2)
         let olderChart = TokenChart(samples: [continuous], now: tokenNow, offset: 3600, minutes: 60)
         check("Paging shows the preceding hour", olderChart.time(at: 1) == tokenNow - 3600000)
         check("Paging stops at recorded history", TokenChart(samples: [continuous], now: tokenNow, offset: 1e9, minutes: 60).offset == olderChart.totalDuration - 3600)
