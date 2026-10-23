@@ -74,7 +74,7 @@ func markdownParts(_ source: String) -> [MarkdownPart] {
             flush(); if let last = parts.indices.last { parts[last].spacing = 14 }; text(heading[2], size: heading[1].count == 1 ? 15 : heading[1].count == 2 ? 14 : 13, weight: .semibold, spacing: 6); continue
         }
         if !matches(#"^\s*([-*_])\s*\1\s*\1[-*_\s]*$"#, line).isEmpty {
-            flush(); let block = NSTextBlock(); block.setWidth(1, type: .absolute, for: .border, edge: .minY); block.setBorderColor(Theme.border)
+            flush(); let block = NSTextBlock(); block.setWidth(1, type: .absoluteValueType, for: .border, edge: .minY); block.setBorderColor(Theme.border)
             let style = NSMutableParagraphStyle(); style.textBlocks = [block]; style.paragraphSpacingBefore = 12; style.paragraphSpacing = 12
             parts.append(MarkdownPart(text: NSAttributedString(string: "\u{200b}", attributes: [.paragraphStyle: style, .font: NSFont.systemFont(ofSize: 1)]))); continue
         }
@@ -99,13 +99,13 @@ func tableCells(_ line: String) -> [String] {
 func tableText(_ rows: [[String]]) -> NSAttributedString {
     let result = NSMutableAttributedString(string: ""), table = NSTextTable()
     table.numberOfColumns = rows.map(\.count).max() ?? 1; table.collapsesBorders = true
-    table.setContentWidth(100, type: .percentage)
+    table.setContentWidth(100, type: .percentageValueType)
     for (row, cells) in rows.enumerated() {
         for (column, cell) in cells.enumerated() {
             let block = NSTextTableBlock(table: table, startingRow: row, rowSpan: 1, startingColumn: column, columnSpan: 1)
-            block.setWidth(1, type: .absolute, for: .border); block.setBorderColor(Theme.border)
-            block.setWidth(5, type: .absolute, for: .padding)
-            block.setWidth(8, type: .absolute, for: .padding, edge: .minX); block.setWidth(8, type: .absolute, for: .padding, edge: .maxX)
+            block.setWidth(1, type: .absoluteValueType, for: .border); block.setBorderColor(Theme.border)
+            block.setWidth(5, type: .absoluteValueType, for: .padding)
+            block.setWidth(8, type: .absoluteValueType, for: .padding, edge: .minX); block.setWidth(8, type: .absoluteValueType, for: .padding, edge: .maxX)
             if row == 0 { block.backgroundColor = NSColor.white.withAlphaComponent(0.04) }
             let style = NSMutableParagraphStyle(); style.textBlocks = [block]; style.minimumLineHeight = 19.2; style.maximumLineHeight = 19.2
             let value = inlineText(cell + "\n", size: 12)
